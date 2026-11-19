@@ -1,6 +1,6 @@
 {
   "name": "obsidian-anki-cloze-sync-pro",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Anki Flashcard Sync Pro: sync Obsidian cloze, Q/A, choice, code practice, and image occlusion flashcards to Anki through AnkiConnect, linked by Anki note ID.",
   "main": "main.js",
   "type": "module",
