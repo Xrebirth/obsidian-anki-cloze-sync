@@ -2,7 +2,7 @@
 
 将 Markdown 笔记中的**填空、问答、选择题、代码练习和图像遮挡卡片**同步到 Anki。插件通过 [AnkiConnect](https://ankiweb.net/shared/info/2055492159) 与 Anki 通信，使用 **Anki note ID** 精确关联，不在 Anki 中写入任何插件追踪标签。
 
-[![Version](https://img.shields.io/badge/version-1.6.6-blue?style=flat-square)](https://github.com/Xrebirth/obsidian-anki-cloze-sync/releases)
+[![Version](https://img.shields.io/badge/version-1.6.9-blue?style=flat-square)](https://github.com/Xrebirth/obsidian-anki-cloze-sync/releases)
 [![License](https://img.shields.io/github/license/Xrebirth/obsidian-anki-cloze-sync?style=flat-square)](LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.7-7C3AED?style=flat-square)](https://obsidian.md)
 [![AnkiConnect](https://img.shields.io/badge/AnkiConnect-2055492159-2E7D32?style=flat-square)](https://ankiweb.net/shared/info/2055492159)
