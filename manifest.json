@@ -1,10 +1,10 @@
 {
   "id": "anki-cloze-sync-pro",
   "name": "Anki Flashcard Sync Pro",
-  "version": "1.6.7",
+  "version": "1.6.8",
   "minAppVersion": "1.5.7",
-  "authorUrl": "https://github.com/Xrebirth/obsidian-anki-cloze-sync",
-  "description": "Anki Flashcard Sync Pro is a desktop plugin using AnkiConnect to sync Q&A, code, MCQ, image occlusion, and cloze cards from Markdown Anki blocks. Linked by note ID, it supports incremental updates without tracking tags or syncing content outside blocks.",
+  "authorUrl": "https://github.com/Xrebirth/obsidian-anki-cloze-sync-pro",
+  "description": "Anki Flashcard Sync Pro uses AnkiConnect to sync Q&A, code, MCQ, image occlusion, and cloze cards from Markdown blocks to Anki. Linked by note ID, it supports incremental updates without tracking tags or syncing outside blocks.",
   "author": "Xrebirth",
   "isDesktopOnly": true
 }
