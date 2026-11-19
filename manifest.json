@@ -4,7 +4,7 @@
   "version": "1.6.1",
   "minAppVersion": "1.5.7",
   "authorUrl": "https://github.com/Xrebirth/obsidian-anki-cloze-sync",
-  "description": "Anki Flashcard Sync Pro 是一款 Obsidian 桌面插件，通过 AnkiConnect 把 Markdown 中 Anki 区块内的问答、代码、选择题、图像遮挡和 Cloze 卡片精确同步到 Anki——用 Anki note ID 关联、不写入追踪标签、增量更新，且区块外内容不会被误同步。",
+  "description": "Anki Flashcard Sync Pro is an Obsidian desktop plugin that uses AnkiConnect to precisely sync Q&A, code, multiple-choice, image occlusion, and cloze cards within Anki blocks in Markdown to Anki—linked by Anki note ID, without writing tracking tags, with incremental updates, and without accidentally syncing content outside the blocks.",
   "author": "Xrebirth",
   "isDesktopOnly": true
 }
