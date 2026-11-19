@@ -1,9 +1,10 @@
 {
-  "id": "anki-cloze-sync",
+  "id": "anki-cloze-sync-pro",
   "name": "Anki Flashcard Sync Pro",
   "version": "1.6.1",
   "minAppVersion": "1.5.7",
-  "description": "Sync cloze, Q/A, choice, code practice, and image occlusion flashcards from your notes to Anki using Anki note IDs.",
-  "author": "Joey",
+  "authorUrl": "https://github.com/Xrebirth/obsidian-anki-cloze-sync",
+  "description": "Anki Flashcard Sync Pro 是一款 Obsidian 桌面插件，通过 AnkiConnect 把 Markdown 中 Anki 区块内的问答、代码、选择题、图像遮挡和 Cloze 卡片精确同步到 Anki——用 Anki note ID 关联、不写入追踪标签、增量更新，且区块外内容不会被误同步。",
+  "author": "Xrebirth",
   "isDesktopOnly": true
 }
