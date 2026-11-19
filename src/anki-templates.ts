@@ -643,7 +643,7 @@ export const BASIC_CODE_FRONT = `
   </header>
 
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 問題</div>
+    <div class="section-label"><span class="section-number">01</span> 问题</div>
     <div class="prompt-content">{{Front}}</div>
   </section>
 
@@ -652,8 +652,8 @@ export const BASIC_CODE_FRONT = `
       <span class="workspace-dots"><i></i><i></i><i></i></span>
       <span class="workspace-language">solution.draft</span>
     </div>
-    <textarea id="code-practice-input" class="code-practice-input" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="程式碼作答區" placeholder="// 在這裡推導並撰寫你的解法…"></textarea>
-    <div class="code-practice-hint"><span class="keycap">Tab</span> 縮排四格 · 完成後點擊 Anki 的「顯示答案」</div>
+    <textarea id="code-practice-input" class="code-practice-input" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="代码作答区" placeholder="// 在这里推导并编写你的解法…"></textarea>
+    <div class="code-practice-hint"><span class="keycap">Tab</span> 缩进四格 · 完成后点击 Anki 的「显示答案」</div>
   </section>
 </main>
 <script>
@@ -691,7 +691,7 @@ export const BASIC_CODE_BACK = `
   </header>
 
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 問題</div>
+    <div class="section-label"><span class="section-number">01</span> 问题</div>
     <div class="prompt-content">{{Front}}</div>
   </section>
 
@@ -701,7 +701,7 @@ export const BASIC_CODE_BACK = `
       <pre><code id="code-draft-output"></code></pre>
     </article>
     <article class="answer-column answer-column--reference">
-      <div class="section-label"><span class="section-number">03</span> 參考答案</div>
+      <div class="section-label"><span class="section-number">03</span> 参考答案</div>
       <div class="reference-content">{{Back}}</div>
     </article>
   </section>
@@ -728,10 +728,10 @@ export const PLAIN_BASIC_FRONT = `
     <span class="review-state">Recall</span>
   </header>
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 問題</div>
+    <div class="section-label"><span class="section-number">01</span> 问题</div>
     <div class="prompt-content">{{Front}}</div>
   </section>
-  <div class="recall-instruction">先在腦中組織答案，再點擊 Anki 的「顯示答案」</div>
+  <div class="recall-instruction">先在脑中组织答案，再点击 Anki 的「显示答案」</div>
 </main>
 `;
 
@@ -745,11 +745,11 @@ export const PLAIN_BASIC_BACK = `
     <span class="review-state">Answer</span>
   </header>
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 問題</div>
+    <div class="section-label"><span class="section-number">01</span> 问题</div>
     <div class="prompt-content">{{Front}}</div>
   </section>
   <section id="answer" class="standard-answer-panel">
-    <div class="section-label"><span class="section-number">02</span> 參考答案</div>
+    <div class="section-label"><span class="section-number">02</span> 参考答案</div>
     <div class="standard-answer-content">{{Back}}</div>
   </section>
 </main>
@@ -765,14 +765,14 @@ export const CHOICE_FRONT = `
     <span class="review-state">Choose</span>
   </header>
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 題目</div>
+    <div class="section-label"><span class="section-number">01</span> 题目</div>
     <div class="prompt-content">{{Question}}</div>
   </section>
   <section class="choice-board">
     <div class="section-label"><span class="section-number">02</span> 作答</div>
     <div id="choice-front-list" class="choice-list" data-mode="{{Mode}}">{{Options}}</div>
   </section>
-  <div class="recall-instruction"><span class="choice-mode-hint" id="choice-mode-hint"></span>選好後，點擊 Anki 的「顯示答案」</div>
+  <div class="recall-instruction"><span class="choice-mode-hint" id="choice-mode-hint"></span>选好后，点击 Anki 的「显示答案」</div>
 </main>
 <script>
 (() => {
@@ -784,7 +784,7 @@ export const CHOICE_FRONT = `
   const options = Array.from(list.querySelectorAll(".choice-option"));
   let selected = [];
   try { sessionStorage.setItem(storageKey, "[]"); } catch (_) {}
-  if (hint) hint.textContent = mode === "multiple" ? "多選題 · 可選多項 · " : "單選題 · 選一項 · ";
+  if (hint) hint.textContent = mode === "multiple" ? "多选题 · 可选多项 · " : "单选题 · 选一项 · ";
 
   const persist = () => {
     try { sessionStorage.setItem(storageKey, JSON.stringify(selected)); } catch (_) {}
@@ -832,17 +832,17 @@ export const CHOICE_BACK = `
     <span class="review-state">Review</span>
   </header>
   <section class="prompt-panel">
-    <div class="section-label"><span class="section-number">01</span> 題目</div>
+    <div class="section-label"><span class="section-number">01</span> 题目</div>
     <div class="prompt-content">{{Question}}</div>
   </section>
   <section class="choice-board">
-    <div class="section-label"><span class="section-number">02</span> 作答結果</div>
-    <div id="choice-answer-summary" class="choice-answer-summary" aria-live="polite">正在核對答案…</div>
+    <div class="section-label"><span class="section-number">02</span> 作答结果</div>
+    <div id="choice-answer-summary" class="choice-answer-summary" aria-live="polite">正在核对答案…</div>
     <div id="choice-back-list" class="choice-list" data-mode="{{Mode}}">{{Options}}</div>
   </section>
   {{#Explanation}}
   <section class="standard-answer-panel choice-explanation">
-    <div class="section-label"><span class="section-number">03</span> 詳解</div>
+    <div class="section-label"><span class="section-number">03</span> 详解</div>
     <div class="standard-answer-content">{{Explanation}}</div>
   </section>
   {{/Explanation}}
@@ -875,22 +875,22 @@ export const CHOICE_BACK = `
     if (chosen && correct) {
       correctSelections += 1;
       option.classList.add("is-correct");
-      if (result) result.textContent = "正確";
+      if (result) result.textContent = "正确";
     } else if (chosen) {
       wrongSelections += 1;
       option.classList.add("is-incorrect");
-      if (result) result.textContent = "選錯";
+      if (result) result.textContent = "选错";
     } else if (correct) {
       missed += 1;
       option.classList.add("is-missed");
-      if (result) result.textContent = "漏選";
+      if (result) result.textContent = "漏选";
     }
   });
 
   if (summary) {
-    if (selected.length === 0) summary.textContent = "這次未作答；橘色虛線標出了正確選項。";
-    else if (wrongSelections === 0 && missed === 0) summary.textContent = "完全正確 · 已選中所有正確選項。";
-    else summary.textContent = "核對結果 · 答對 " + correctSelections + " 項，選錯 " + wrongSelections + " 項，漏選 " + missed + " 項。";
+    if (selected.length === 0) summary.textContent = "这次未作答；橘色虚线标出了正确选项。";
+    else if (wrongSelections === 0 && missed === 0) summary.textContent = "完全正确 · 已选中所有正确选项。";
+    else summary.textContent = "核对结果 · 答对 " + correctSelections + " 项，选错 " + wrongSelections + " 项，漏选 " + missed + " 项。";
   }
 })();
 </script>
@@ -905,14 +905,14 @@ export const IMAGE_OCCLUSION_FRONT = `
     </div>
     <span class="review-state">Identify</span>
   </header>
-  <div class="section-label"><span class="section-number">01</span> 辨識遮擋區域</div>
+  <div class="section-label"><span class="section-number">01</span> 辨识遮挡区域</div>
   <section class="image-occlusion-panel">
     <div id="image-occlusion-front-stage" class="image-occlusion-stage">
       {{Image}}
       <div id="image-occlusion-front-mask-data" class="image-occlusion-mask-data">{{Mask}}</div>
     </div>
   </section>
-  <div class="recall-instruction">依編號辨識每個遮擋區域，再點擊 Anki 的「顯示答案」</div>
+  <div class="recall-instruction">依编号辨识每个遮挡区域，再点击 Anki 的「显示答案」</div>
 </main>
 <script>
 (() => {
@@ -946,12 +946,12 @@ export const IMAGE_OCCLUSION_BACK = `
     </div>
   </section>
   <div class="image-occlusion-reveal-controls">
-    <span id="image-occlusion-reveal-status" aria-live="polite">準備依序揭示…</span>
-    <button id="image-occlusion-reveal-next" type="button">揭示下一個</button>
+    <span id="image-occlusion-reveal-status" aria-live="polite">准备依序揭示…</span>
+    <button id="image-occlusion-reveal-next" type="button">揭示下一个</button>
   </div>
   {{#Answer}}
   <section id="image-occlusion-answer" class="standard-answer-panel image-occlusion-answer is-pending">
-    <div class="section-label"><span class="section-number">02</span> 補充答案</div>
+    <div class="section-label"><span class="section-number">02</span> 补充答案</div>
     <div class="standard-answer-content">{{Answer}}</div>
   </section>
   {{/Answer}}
@@ -977,7 +977,7 @@ export const IMAGE_OCCLUSION_BACK = `
   let revealed = 0;
 
   const complete = () => {
-    status.textContent = "全部 " + masks.length + " 個區域已揭示";
+    status.textContent = "全部 " + masks.length + " 个区域已揭示";
     nextButton.textContent = "全部已揭示";
     nextButton.disabled = true;
     if (answer) {
@@ -1000,12 +1000,12 @@ export const IMAGE_OCCLUSION_BACK = `
       window.setTimeout(complete, 360);
       return;
     }
-    status.textContent = "已揭示 " + revealed + " / " + masks.length + " · 下一個是 #" + (revealed + 1);
+    status.textContent = "已揭示 " + revealed + " / " + masks.length + " · 下一个是 #" + (revealed + 1);
   };
 
   nextButton.addEventListener("click", revealNext);
   if (masks.length === 0) complete();
-  else status.textContent = "共 " + masks.length + " 個區域 · 點擊揭示 #1";
+  else status.textContent = "共 " + masks.length + " 个区域 · 点击揭示 #1";
 })();
 </script>
 `;
@@ -1020,7 +1020,7 @@ export const CLOZE_FRONT = `
     <span class="review-state">Recall</span>
   </header>
   <section class="prompt-panel cloze-panel">
-    <div class="section-label"><span class="section-number">01</span> 完成這段敘述</div>
+    <div class="section-label"><span class="section-number">01</span> 完成这段叙述</div>
     <div class="cloze-content">{{cloze:Text}}</div>
   </section>
 </main>
@@ -1036,7 +1036,7 @@ export const CLOZE_BACK = `
     <span class="review-state">Resolved</span>
   </header>
   <section class="prompt-panel cloze-panel">
-    <div class="section-label"><span class="section-number">01</span> 完成這段敘述</div>
+    <div class="section-label"><span class="section-number">01</span> 完成这段叙述</div>
     <div class="cloze-content">{{cloze:Text}}</div>
   </section>
   <section class="cloze-meta">{{Back Extra}}</section>

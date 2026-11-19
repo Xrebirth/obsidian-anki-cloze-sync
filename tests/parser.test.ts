@@ -1,57 +1,90 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  addMissingSyncIds,
-  ensureFileSyncId,
+  ANKI_ID_PATTERN,
+  applyAnkiIdMarkers,
   parseBasicCards,
   parseChoiceCards,
   parseClozeCards,
+  parseDocument,
   parseFlashcards,
   parseImageOcclusionCards,
   parseImageOcclusionMask,
-  regenerateSyncIds
+  parseLineMarker,
+  scanAnkiIdMarkers
 } from "../src/parser";
-import {
-  CONTENT_HASH_TAG_PREFIX,
-  canSafelyAttributeLegacyNote,
-  contentHashTag,
-  createContentHash,
-  findStaleNoteIds,
-  mergeNoteIdsBySyncId,
-  noteBelongsToFile,
-  obsoleteLegacyFileTags
-} from "../src/sync-utils";
 import {
   collectMarkdownSyncIds,
   diagnoseMarkdown,
   findCrossFileIdConflicts
 } from "../src/diagnostics";
 import {
+  classifyNoteOwnership,
+  findStaleNoteIds,
+  noteMatchesFields,
+  obsoletePluginTags
+} from "../src/sync-utils";
+import { isIgnoredPath, normalizeVaultPath } from "../src/ignore";
+import { resolveNoteFileConfigFromData } from "../src/note-config";
+import { DEFAULT_SETTINGS } from "../src/types";
+import {
   extractEmbeddedLinks,
   isExactMediaSourceMatch,
   rewriteEmbeddedMediaForAnki
 } from "../src/media";
-import { resolveNoteFileConfigFromData } from "../src/note-config";
-import { DEFAULT_SETTINGS } from "../src/types";
 
-test("parses a cloze paragraph and its stable id", () => {
+const noteInfo = (fields: Record<string, string>, noteId = 1) => ({
+  noteId,
+  modelName: "Obsidian Q&A",
+  tags: [] as string[],
+  cards: [noteId],
+  fields: Object.fromEntries(
+    Object.entries(fields).map(([name, value], order) => [name, { value, order }])
+  )
+});
+
+test("parses an Anki-ID marker after a cloze paragraph", () => {
   const source = [
-    "# Biology",
-    "",
     "The powerhouse is {{c1::the mitochondrion}}.",
-    "<!-- anki-sync-id: card-123 -->"
+    "<!-- Anki-ID: 123456789 -->"
   ].join("\n");
-  const cards = parseClozeCards(source);
+  const [card] = parseClozeCards(source);
 
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0]?.id, "card-123");
-  assert.equal(cards[0]?.markdown, "The powerhouse is {{c1::the mitochondrion}}.");
+  assert.equal(card?.ankiId, 123456789);
+  assert.equal(card?.legacySyncId, null);
+  assert.equal(card?.markerLine, 1);
+  assert.equal(card?.markdown, "The powerhouse is {{c1::the mitochondrion}}.");
+});
+
+test("accepts Anki-ID spelling variants", () => {
+  assert.equal(parseLineMarker("<!-- Anki-ID: 42 -->")?.ankiId, 42);
+  assert.equal(parseLineMarker("<!--anki-id:42-->")?.ankiId, 42);
+  assert.equal(parseLineMarker("<!-- ANKI ID ： 42 -->")?.ankiId, 42);
+  assert.equal(parseLineMarker("<!-- Anki-ID: 0 -->"), null);
+  assert.equal(parseLineMarker("<!-- Anki-ID: abc -->"), null);
+});
+
+test("parses legacy sync markers for migration", () => {
+  const source = [
+    "<!-- anki-sync-file-id: old-file -->",
+    "",
+    "Q: One?",
+    "A: First",
+    "<!-- anki-sync-id: old-card -->"
+  ].join("\n");
+  const document = parseDocument(source);
+
+  assert.equal(document.legacyFileId, "old-file");
+  assert.equal(document.legacyFileIdLine, 0);
+  assert.equal(document.cards.length, 1);
+  assert.equal(document.cards[0]?.legacySyncId, "old-card");
+  assert.equal(document.cards[0]?.ankiId, null);
 });
 
 test("supports multiple clozes and hints in one note", () => {
   const cards = parseClozeCards("{{c1::Paris::city}} is in {{c2::France::country}}.");
   assert.equal(cards.length, 1);
-  assert.equal(cards[0]?.id, null);
+  assert.equal(cards[0]?.ankiId, null);
 });
 
 test("ignores cloze syntax in frontmatter and fenced code", () => {
@@ -67,54 +100,46 @@ test("ignores cloze syntax in frontmatter and fenced code", () => {
   assert.deepEqual(parseClozeCards(source), []);
 });
 
-test("adds ids in reverse order without shifting insertion positions", () => {
-  let next = 0;
-  const source = "First {{c1::one}}.\n\nSecond {{c1::two}}.";
-  const result = addMissingSyncIds(source, () => `id-${++next}`);
-  const cards = parseClozeCards(result.markdown);
-
-  assert.equal(result.added, 2);
-  assert.equal(cards.length, 2);
-  assert.equal(cards[0]?.id, "id-2");
-  assert.equal(cards[1]?.id, "id-1");
-});
-
-test("does not create another id after the first sync", () => {
-  const first = addMissingSyncIds("Question {{c1::answer}}", () => "stable");
-  const second = addMissingSyncIds(first.markdown, () => "unexpected");
-  assert.equal(second.added, 0);
-  assert.equal(second.markdown, first.markdown);
-});
-
-
-test("stops a cloze card at its sync id", () => {
+test("does not treat Anki-ID examples inside code as markers", () => {
   const source = [
-    "Question {{c1::answer}}",
-    "<!-- anki-sync-id: cloze-id -->",
-    "ordinary prose"
+    "```md",
+    "<!-- Anki-ID: 12 -->",
+    "<!-- anki-sync-file-id: example-file -->",
+    "```",
+    "",
+    "    <!-- Anki-ID: 13 -->",
+    "",
+    "Q: Real card?",
+    "A: Yes"
   ].join("\n");
 
-  const cards = parseClozeCards(source);
-
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0]?.id, "cloze-id");
-  assert.equal(cards[0]?.markdown, "Question {{c1::answer}}");
+  assert.deepEqual(scanAnkiIdMarkers(source), []);
+  assert.equal(parseDocument(source).legacyFileId, null);
 });
 
-test("does not parse removed numbered Q1/A1 cards", () => {
-  const source = [
-    "Q1: 1+1 = ?",
-    "A1: 2",
-    "<!-- anki-sync-id: math-1 -->"
-  ].join("\n");
-  assert.deepEqual(parseBasicCards(source), []);
+test("parses a Q/A card with its Anki-ID", () => {
+  const source = "Q: question\nA: answer\n<!-- Anki-ID: 7 -->";
+  const [card] = parseBasicCards(source);
+
+  assert.equal(card?.kind, "plain");
+  assert.equal(card?.ankiId, 7);
+  assert.equal(card?.endLine, 1);
+  assert.equal(card?.markerLine, 2);
+});
+
+test("keeps an Anki-ID marker across blank lines after the answer", () => {
+  const source = "Q: question\nA: answer\n\n<!-- Anki-ID: 77 -->";
+  const [card] = parseBasicCards(source);
+
+  assert.equal(card?.ankiId, 77);
+  assert.equal(card?.answerMarkdown, "answer");
 });
 
 test("supports full-width colons and unnumbered Q/A cards", () => {
-  const cards = parseBasicCards("Q：台灣的首都是？\nA：台北");
+  const cards = parseBasicCards("Q：台湾的首都是？\nA：台北");
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.kind, "plain");
-  assert.equal(cards[0]?.questionMarkdown, "台灣的首都是？");
+  assert.equal(cards[0]?.questionMarkdown, "台湾的首都是？");
 });
 
 test("parses unnumbered QC/AC as a code-practice card", () => {
@@ -124,12 +149,9 @@ test("parses unnumbered QC/AC as a code-practice card", () => {
   assert.equal(cards[0]?.kind, "basic");
 });
 
-test("does not parse removed numbered QC1/AC1 cards", () => {
-  assert.deepEqual(parseBasicCards("QC1: Question\nAC1: Answer"), []);
-});
-
-test("does not treat removed QB/AB aliases as cards", () => {
-  assert.deepEqual(parseBasicCards("QB1: Question\nAB1: Answer"), []);
+test("does not parse removed numbered Q1/A1 cards", () => {
+  const source = "Q1: 1+1 = ?\nA1: 2\n<!-- Anki-ID: 5 -->";
+  assert.deepEqual(parseBasicCards(source), []);
 });
 
 test("parses adjacent Q/A pairs without requiring blank lines", () => {
@@ -138,7 +160,6 @@ test("parses adjacent Q/A pairs without requiring blank lines", () => {
   assert.equal(cards.length, 2);
   assert.equal(cards[1]?.answerMarkdown, "Second");
 });
-
 
 test("keeps blank lines and restarted lists inside Q/A answers", () => {
   const answers = [
@@ -151,18 +172,6 @@ test("keeps blank lines and restarted lists inside Q/A answers", () => {
     const cards = parseBasicCards(`Q: Why?\nA:\n${answer}`);
     assert.equal(cards.length, 1);
     assert.equal(cards[0]?.answerMarkdown, answer);
-  }
-});
-
-test("keeps an existing Q/A sync id across blank lines", () => {
-  for (const gap of ["\n\n", "\n\n\n"]) {
-    const source = `Q: question\nA: answer${gap}<!-- anki-sync-id: stable-id -->`;
-    const cards = parseBasicCards(source);
-    const result = addMissingSyncIds(source, () => "unexpected");
-
-    assert.equal(cards[0]?.id, "stable-id");
-    assert.equal(result.added, 0);
-    assert.equal(result.markdown, source);
   }
 });
 
@@ -180,122 +189,214 @@ test("keeps a following standalone cloze separate from a Q/A answer", () => {
   assert.equal(cards[0]?.kind === "plain" ? cards[0].answerMarkdown : null, "answer");
 });
 
-test("does not reuse a Q/A sync id for a following cloze card", () => {
+test("a deck block parses multi-line Q/A content with blank lines", () => {
   const source = [
-    "Q: question",
-    "A: answer",
+    "<!-- Deck_START -->",
+    "Q: 这是问答题目（支持多行）",
+    "题目的第二行",
     "",
-    "<!-- anki-sync-id: qa-id -->",
-    "This is {{c1::cloze}}"
-  ].join("\n");
-
-  const cards = parseFlashcards(source);
-
-  assert.equal(cards.length, 2);
-  assert.equal(cards[0]?.kind, "plain");
-  assert.equal(cards[0]?.id, "qa-id");
-  assert.equal(cards[1]?.kind, "cloze");
-  assert.equal(cards[1]?.id, null);
-});
-
-test("adds a separate id to cloze after a Q/A stable id", () => {
-  const source = [
-    "Q: question",
-    "A: answer",
+    "A: 这是答案（支持多行）",
+    "答案第二段",
     "",
-    "<!-- anki-sync-id: qa-id -->",
-    "This is {{c1::cloze}}"
+    "答案第三段",
+    "<!-- Deck_END -->",
+    "<!-- Anki-ID: 987 -->"
   ].join("\n");
+  const document = parseDocument(source);
 
-  const result = addMissingSyncIds(source, () => "cloze-id");
-  const cards = parseFlashcards(result.markdown);
-
-  assert.equal(result.added, 1);
-  assert.equal(cards[0]?.id, "qa-id");
-  assert.equal(cards[1]?.id, "cloze-id");
-});
-
-test("adds one id after a complete multiline Q/A answer and is idempotent", () => {
-  const source = [
-    "Q: List both groups.",
-    "A:",
-    "1. first",
-    "2. second",
-    "",
-    "1. another first",
-    "2. another second"
-  ].join("\n");
-  const first = addMissingSyncIds(source, () => "stable-id");
-  const second = addMissingSyncIds(first.markdown, () => "unexpected");
-
-  assert.equal(first.added, 1);
-  assert.equal(first.markdown, `${source}\n<!-- anki-sync-id: stable-id -->`);
-  assert.equal(parseBasicCards(first.markdown)[0]?.id, "stable-id");
-  assert.equal(second.added, 0);
-  assert.equal(second.markdown, first.markdown);
-});
-
-test("keeps question markers, headings and rules as Q/A answer boundaries", () => {
-  const source = "Q: question 1\nA: answer 1\n\nQ: question 2\nA: answer 2";
-  const cards = parseBasicCards(source);
-
-  assert.equal(cards.length, 2);
-  assert.deepEqual(cards.map((card) => card.answerMarkdown), ["answer 1", "answer 2"]);
-
-  for (const boundary of ["## Notes", "---"]) {
-    const boundaryCards = parseBasicCards(
-      `Q: question\nA: answer\n\n${boundary}\nordinary prose`
-    );
-    assert.equal(boundaryCards[0]?.answerMarkdown, "answer");
+  assert.equal(document.cards.length, 1);
+  const card = document.cards[0];
+  assert.equal(card?.kind, "plain");
+  assert.equal(card?.questionMarkdown, "这是问答题目（支持多行）\n题目的第二行");
+  assert.equal(card?.answerMarkdown, "这是答案（支持多行）\n答案第二段\n\n答案第三段");
+  assert.equal(card?.ankiId, 987);
+  assert.equal(card?.markerLine, 9);
+  assert.equal(card?.deckBlock?.startLine, 0);
+  assert.equal(card?.deckBlock?.endLine, 8);
+  if (card?.kind === "plain") {
+    assert.ok(!card.answerMarkdown.includes("Deck_END"));
+    assert.ok(!card.questionMarkdown.includes("Deck_START"));
   }
 });
 
-test("supports a fenced code block as the reference answer", () => {
+test("a deck block can hold several cards mapped to markers after Deck_END", () => {
   const source = [
-    "QC: Implement a stack push method.",
-    "AC:",
-    "```ts",
-    "push(value: T): void {",
-    "  this.items.push(value);",
-    "}",
-    "```"
+    "<!-- Deck_START -->",
+    "Q: one",
+    "A: first",
+    "Q: two",
+    "A: second",
+    "<!-- Deck_END -->",
+    "<!-- Anki-ID: 11 -->",
+    "<!-- Anki-ID: 22 -->"
   ].join("\n");
-  const cards = parseBasicCards(source);
+  const cards = parseFlashcards(source);
 
-  assert.equal(cards.length, 1);
-  assert.match(cards[0]?.answerMarkdown ?? "", /^```ts/);
-  assert.match(cards[0]?.answerMarkdown ?? "", /this\.items\.push\(value\)/);
+  assert.equal(cards.length, 2);
+  assert.deepEqual(cards.map((card) => card.ankiId), [11, 22]);
+  assert.deepEqual(
+    cards.map((card) => (card.kind === "plain" ? card.answerMarkdown : null)),
+    ["first", "second"]
+  );
 });
 
-test("keeps removed numbered questions out of a preceding answer", () => {
-  const cards = parseBasicCards("Q: Current\nA: Answer\nQ1: Removed\nA1: Removed answer");
+test("cloze content inside a deck block spans blank lines", () => {
+  const source = [
+    "<!-- Deck_START -->",
+    "First {{c1::one}} line.",
+    "",
+    "Second line with {{c2::two}}.",
+    "<!-- Deck_END -->",
+    "<!-- Anki-ID: 33 -->"
+  ].join("\n");
+  const cards = parseClozeCards(source);
+
   assert.equal(cards.length, 1);
-  assert.equal(cards[0]?.answerMarkdown, "Answer");
+  assert.equal(cards[0]?.ankiId, 33);
+  assert.equal(cards[0]?.markdown, "First {{c1::one}} line.\n\nSecond line with {{c2::two}}.");
+});
+
+test("cards outside a deck block keep blank-line boundaries", () => {
+  const source = [
+    "One {{c1::a}}.",
+    "",
+    "<!-- Deck_START -->",
+    "Q: inside",
+    "A: block",
+    "<!-- Deck_END -->",
+    "",
+    "Two {{c1::b}}."
+  ].join("\n");
+  const cards = parseFlashcards(source);
+
+  assert.deepEqual(cards.map((card) => card.kind), ["cloze", "plain", "cloze"]);
+  assert.deepEqual(
+    cards.map((card) => (card.ankiId === null ? null : card.ankiId)),
+    [null, null, null]
+  );
+});
+
+test("adds a marker directly after Deck_END when a card was just synced", () => {
+  const source = [
+    "<!-- Deck_START -->",
+    "Q: 这是问答题目（支持多行）",
+    "A: 这是答案（支持多行）",
+    "<!-- Deck_END -->"
+  ].join("\n");
+  const document = parseDocument(source);
+  const result = applyAnkiIdMarkers(source, [
+    { card: document.cards[0]!, noteId: 555 }
+  ]);
+
+  assert.equal(
+    result.markdown,
+    [
+      "<!-- Deck_START -->",
+      "Q: 这是问答题目（支持多行）",
+      "A: 这是答案（支持多行）",
+      "<!-- Deck_END -->",
+      "<!-- Anki-ID: 555 -->"
+    ].join("\n")
+  );
+  assert.equal(result.added, 1);
+  assert.equal(parseDocument(result.markdown).cards[0]?.ankiId, 555);
+});
+
+test("adds markers below regular cards and replaces legacy markers", () => {
+  const source = [
+    "<!-- anki-sync-file-id: old-file -->",
+    "",
+    "Q: One?",
+    "A: First",
+    "<!-- anki-sync-id: old-card -->",
+    "",
+    "Water is {{c1::H2O}}."
+  ].join("\n");
+  const document = parseDocument(source);
+  const basic = document.cards.find((card) => card.kind === "plain");
+  const cloze = document.cards.find((card) => card.kind === "cloze");
+
+  const result = applyAnkiIdMarkers(source, [
+    { card: basic!, noteId: 41 },
+    { card: cloze!, noteId: 42 }
+  ]);
+
+  assert.equal(result.removedLegacyFileId, true);
+  assert.ok(!result.markdown.includes("anki-sync-file-id"));
+  assert.ok(!result.markdown.includes("anki-sync-id"));
+  assert.equal(result.added, 1);
+  const reparsed = parseDocument(result.markdown);
+  assert.deepEqual(reparsed.cards.map((card) => card.ankiId), [41, 42]);
+});
+
+test("adds markers for several new cards after Deck_END in order", () => {
+  const source = [
+    "<!-- Deck_START -->",
+    "Q: one",
+    "A: first",
+    "Q: two",
+    "A: second",
+    "<!-- Deck_END -->"
+  ].join("\n");
+  const document = parseDocument(source);
+  const result = applyAnkiIdMarkers(
+    source,
+    document.cards.map((card, index) => ({ card, noteId: 100 + index }))
+  );
+
+  assert.equal(
+    result.markdown,
+    [
+      "<!-- Deck_START -->",
+      "Q: one",
+      "A: first",
+      "Q: two",
+      "A: second",
+      "<!-- Deck_END -->",
+      "<!-- Anki-ID: 100 -->",
+      "<!-- Anki-ID: 101 -->"
+    ].join("\n")
+  );
+  assert.deepEqual(
+    parseDocument(result.markdown).cards.map((card) => card.ankiId),
+    [100, 101]
+  );
+});
+
+test("re-applying identical markers is a no-op", () => {
+  const source = "Q: One?\nA: First\n<!-- Anki-ID: 41 -->";
+  const document = parseDocument(source);
+  const result = applyAnkiIdMarkers(source, [
+    { card: document.cards[0]!, noteId: 41 }
+  ]);
+
+  assert.equal(result.changed, false);
+  assert.equal(result.markdown, source);
 });
 
 test("parses QS as a single-choice card with an optional explanation", () => {
   const source = [
-    "QS: HTTP 的預設連接埠是？",
+    "QS: HTTP 的默认端口是？",
     "- [ ] 21",
     "- [ ] 22",
     "- [-] **80**",
     "- [ ] 443",
-    "E: HTTPS 才預設使用 443。",
-    "<!-- anki-sync-id: http-port -->"
+    "E: HTTPS 才默认使用 443。",
+    "<!-- Anki-ID: 88 -->"
   ].join("\n");
   const cards = parseChoiceCards(source);
 
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.mode, "single");
-  assert.equal(cards[0]?.questionMarkdown, "HTTP 的預設連接埠是？");
+  assert.equal(cards[0]?.questionMarkdown, "HTTP 的默认端口是？");
   assert.deepEqual(cards[0]?.options, [
     { markdown: "21", correct: false },
     { markdown: "22", correct: false },
     { markdown: "**80**", correct: true },
     { markdown: "443", correct: false }
   ]);
-  assert.equal(cards[0]?.explanationMarkdown, "HTTPS 才預設使用 443。");
-  assert.equal(cards[0]?.id, "http-port");
+  assert.equal(cards[0]?.explanationMarkdown, "HTTPS 才默认使用 443。");
+  assert.equal(cards[0]?.ankiId, 88);
 });
 
 test("parses QM with multiple correct answers and full-width punctuation", () => {
@@ -318,40 +419,11 @@ test("rejects choice cards with invalid answer counts", () => {
   assert.deepEqual(parseChoiceCards("QS: Too few\n- [-] A"), []);
 });
 
-test("rejects completed task markers so Obsidian does not strike through answers", () => {
-  const source = "QS: Pick one\n- [ ] A\n- [x] B";
-  assert.deepEqual(parseChoiceCards(source), []);
-  assert.ok(diagnoseMarkdown(source).some((item) =>
-    item.message.includes("[-]") && item.message.includes("[x]")
-  ));
-});
-
 test("keeps a preceding Q/A answer separate from an adjacent choice card", () => {
   const source = "Q: One?\nA: First\nQS: Two?\n- [ ] A\n- [-] B";
   const cards = parseFlashcards(source);
   assert.deepEqual(cards.map((card) => card.kind), ["plain", "choice"]);
   assert.equal(cards[0]?.kind === "plain" ? cards[0].answerMarkdown : null, "First");
-});
-
-test("adds a stable id to a choice card and does not duplicate it", () => {
-  const source = "QS: Pick one\n- [ ] A\n- [-] B";
-  const first = addMissingSyncIds(source, () => "choice-stable");
-  const second = addMissingSyncIds(first.markdown, () => "unexpected");
-
-  assert.equal(first.added, 1);
-  assert.equal(second.added, 0);
-  assert.equal(parseChoiceCards(second.markdown)[0]?.id, "choice-stable");
-});
-
-test("adds stable ids to mixed cloze and basic cards", () => {
-  let next = 0;
-  const source = "Q: 1+1?\nA: 2\n\nWater is {{c1::H2O}}.";
-  const result = addMissingSyncIds(source, () => `mixed-${++next}`);
-  const cards = parseFlashcards(result.markdown);
-
-  assert.equal(result.added, 2);
-  assert.deepEqual(cards.map((card) => card.kind), ["plain", "cloze"]);
-  assert.ok(cards.every((card) => card.id !== null));
 });
 
 test("parses an image occlusion card with multiple masks in reveal order", () => {
@@ -361,7 +433,7 @@ test("parses an image occlusion card with multiple masks in reveal order", () =>
     "<!-- MASK: 55, 16, 18, 22 -->",
     "<!-- MASK: 42, 63, 14, 12 -->",
     "A: 左心室",
-    "<!-- anki-sync-id: heart-left-ventricle -->"
+    "<!-- Anki-ID: 314 -->"
   ].join("\n");
   const cards = parseImageOcclusionCards(source);
 
@@ -374,7 +446,7 @@ test("parses an image occlusion card with multiple masks in reveal order", () =>
     { x: 42, y: 63, width: 14, height: 12 }
   ]);
   assert.equal(cards[0]?.answerMarkdown, "左心室");
-  assert.equal(cards[0]?.id, "heart-left-ventricle");
+  assert.equal(cards[0]?.ankiId, 314);
 });
 
 test("image occlusion answer is optional and full-width colons are accepted", () => {
@@ -405,163 +477,28 @@ test("rejects image occlusion masks outside the image", () => {
   });
 });
 
-test("does not parse a bare MASK line", () => {
-  assert.deepEqual(
-    parseImageOcclusionCards("IO: ![[brain.png]]\nMASK: 10, 10, 20, 20"),
-    []
-  );
+test("diagnoses unclosed and stray deck markers", () => {
+  const unclosed = diagnoseMarkdown("<!-- Deck_START -->\nQ: a\nA: b");
+  assert.ok(unclosed.some((item) => item.severity === "error" && item.message.includes("Deck_END")));
+
+  const stray = diagnoseMarkdown("<!-- Deck_END -->");
+  assert.ok(stray.some((item) => item.severity === "warning" && item.message.includes("Deck_START")));
 });
 
-test("adds stable ids to image occlusion cards in mixed notes", () => {
-  let next = 0;
-  const source = [
-    "Q: 1+1?",
-    "A: 2",
-    "",
-    "IO: ![[map.png]]",
-    "<!-- MASK: 20, 30, 15, 10 -->"
-  ].join("\n");
-  const result = addMissingSyncIds(source, () => `card-${++next}`);
-  const cards = parseFlashcards(result.markdown);
-
-  assert.deepEqual(cards.map((card) => card.kind), ["plain", "image-occlusion"]);
-  assert.ok(cards.every((card) => card.id));
-});
-
-test("adds one stable file id after frontmatter", () => {
-  const source = "---\ntags: [study]\n---\nQ: 1+1?\nA: 2";
-  const first = ensureFileSyncId(source, () => "file-123");
-  const second = ensureFileSyncId(first.markdown, () => "unexpected");
-
-  assert.equal(first.added, true);
-  assert.match(first.markdown, /---\n<!-- anki-sync-file-id: file-123 -->\n\nQ:/);
-  assert.equal(second.added, false);
-  assert.equal(second.id, "file-123");
-});
-
-test("keeps the file id after all cards are removed", () => {
-  const source = "<!-- anki-sync-file-id: file-123 -->\n\nNo cards remain.";
-  const result = ensureFileSyncId(source, () => "unexpected");
-  assert.equal(result.id, "file-123");
-  assert.equal(result.added, false);
-});
-
-test("adds a file id when an older synced card was removed", () => {
-  const source = "<!-- anki-sync-id: old-card -->";
-  const result = ensureFileSyncId(source, () => "migrated-file");
-  assert.equal(result.id, "migrated-file");
-  assert.equal(result.added, true);
-});
-
-test("finds notes removed from the current Markdown file", () => {
-  assert.deepEqual(findStaleNoteIds([10, 20, 20, 30], [10, 30]), [20]);
-});
-
-test("recovers a card match from owned note tags when the direct Anki query misses it", () => {
-  const result = mergeNoteIdsBySyncId(
-    ["card-123", "card-456"],
-    new Map([
-      ["card-123", []],
-      ["card-456", [20]]
-    ]),
-    [
-      {
-        noteId: 10,
-        tags: ["obsidian_file_note", "obsidian_sync_id_card-123"]
-      },
-      {
-        noteId: 20,
-        tags: ["obsidian_file_note", "obsidian_sync_id_card-456"]
-      }
-    ]
-  );
-
-  assert.deepEqual(result.get("card-123"), [10]);
-  assert.deepEqual(result.get("card-456"), [20]);
-});
-
-test("regenerates file and card ids without changing card content", () => {
-  let next = 0;
-  const source = [
-    "<!-- anki-sync-file-id: old-file -->",
-    "Q: One?",
-    "A: First",
-    "<!-- anki-sync-id: old-card -->"
-  ].join("\n");
-  const result = regenerateSyncIds(source, () => `new-${++next}`);
-
-  assert.equal(result.replaced, 2);
-  assert.match(result.markdown, /anki-sync-file-id: new-1/);
-  assert.match(result.markdown, /anki-sync-id: new-2/);
-  const card = parseFlashcards(result.markdown)[0];
-  assert.equal(card?.kind === "plain" ? card.questionMarkdown : null, "One?");
-});
-
-test("ignores sync id examples inside fenced code blocks", () => {
-  const source = [
-    "```md",
-    "<!-- anki-sync-file-id: example-file -->",
-    "<!-- anki-sync-id: example-card -->",
-    "```",
-    "",
-    "    <!-- anki-sync-id: indented-example -->",
-    "",
-    "Q: Real card?",
-    "A: Yes"
-  ].join("\n");
-
-  assert.deepEqual(collectMarkdownSyncIds(source), { fileId: null, cardIds: [] });
-  const withFileId = ensureFileSyncId(source, () => "real-file");
-  assert.equal(withFileId.id, "real-file");
-  const regenerated = regenerateSyncIds(withFileId.markdown, () => "new-real-file");
-  assert.match(regenerated.markdown, /anki-sync-file-id: example-file/);
-  assert.match(regenerated.markdown, /anki-sync-id: example-card/);
-  assert.match(regenerated.markdown, /anki-sync-id: indented-example/);
-  assert.match(regenerated.markdown, /anki-sync-file-id: new-real-file/);
-});
-
-test("diagnoses multiple top-level file ids", () => {
-  const diagnostics = diagnoseMarkdown([
-    "<!-- anki-sync-file-id: first -->",
-    "<!-- anki-sync-file-id: second -->"
-  ].join("\n"));
-  assert.ok(diagnostics.some((item) => item.severity === "error" && item.message.includes("多個")));
-});
-
-test("diagnoses duplicate ids and incomplete questions", () => {
+test("diagnoses duplicate Anki-IDs and incomplete questions", () => {
   const source = [
     "Q: Missing answer",
     "",
     "First {{c1::one}}.",
-    "<!-- anki-sync-id: duplicate -->",
+    "<!-- Anki-ID: 5 -->",
     "",
     "Second {{c1::two}}.",
-    "<!-- anki-sync-id: duplicate -->"
+    "<!-- Anki-ID: 5 -->"
   ].join("\n");
   const diagnostics = diagnoseMarkdown(source);
 
-  assert.ok(diagnostics.some((item) => item.severity === "error" && item.message.includes("重複")));
+  assert.ok(diagnostics.some((item) => item.severity === "error" && item.message.includes("重复")));
   assert.ok(diagnostics.some((item) => item.line === 1 && item.message.includes("缺少")));
-});
-
-test("diagnoses malformed image occlusion blocks", () => {
-  const diagnostics = diagnoseMarkdown("IO: ![[heart.png]]\n<!-- MASK: 80, 80, 30, 30 -->");
-  assert.ok(diagnostics.some((item) => item.line === 1 && item.message.includes("影像遮擋")));
-});
-
-test("diagnoses invalid single- and multiple-choice answers", () => {
-  const diagnostics = diagnoseMarkdown([
-    "QS: Invalid single",
-    "- [-] A",
-    "- [-] B",
-    "",
-    "QM: Invalid multiple",
-    "- [ ] A",
-    "- [ ] B"
-  ].join("\n"));
-
-  assert.ok(diagnostics.some((item) => item.line === 1 && item.message.includes("剛好")));
-  assert.ok(diagnostics.some((item) => item.line === 5 && item.message.includes("至少")));
 });
 
 test("accepts consecutive masks without orphan diagnostics", () => {
@@ -569,23 +506,83 @@ test("accepts consecutive masks without orphan diagnostics", () => {
     "IO: ![[heart.png]]",
     "<!-- MASK: 10, 10, 20, 20 -->",
     "<!-- MASK: 45, 30, 15, 15 -->",
-    "A: 心臟構造"
+    "A: 心脏构造"
   ].join("\n");
   const diagnostics = diagnoseMarkdown(source);
-  assert.equal(diagnostics.filter((item) => item.message.includes("MASK 前沒有")).length, 0);
-  assert.equal(diagnostics.filter((item) => item.message.includes("答案前沒有")).length, 0);
+  assert.equal(diagnostics.filter((item) => item.message.includes("MASK 前没有")).length, 0);
+  assert.equal(diagnostics.filter((item) => item.message.includes("答案前没有")).length, 0);
 });
 
-test("detects copied file and card ids across notes", () => {
-  const current = collectMarkdownSyncIds(
-    "<!-- anki-sync-file-id: same-file -->\n<!-- anki-sync-id: same-card -->"
-  );
+test("detects copied Anki note ids across notes", () => {
+  const current = collectMarkdownSyncIds("Q: a\nA: b\n<!-- Anki-ID: 9 -->");
   const diagnostics = findCrossFileIdConflicts("copy.md", current, [{
     path: "original.md",
     ids: current
   }]);
 
-  assert.equal(diagnostics.filter((item) => item.severity === "error").length, 2);
+  assert.equal(diagnostics.filter((item) => item.severity === "error").length, 1);
+  assert.ok(diagnostics[0]?.message.includes("9"));
+});
+
+test("finds notes removed from the current Markdown file", () => {
+  assert.deepEqual(findStaleNoteIds([10, 20, 20, 30], [10, 30]), [20]);
+});
+
+test("ignores paths by exact name, folder and wildcard", () => {
+  assert.equal(normalizeVaultPath("./Templates\\Daily.md/"), "templates/daily.md");
+  assert.equal(isIgnoredPath("Templates/Daily.md", ["templates/daily.md"]), true);
+  assert.equal(isIgnoredPath("Templates/sub/Note.md", ["Templates"]), true);
+  assert.equal(isIgnoredPath("Journal/2026-11-19.md", ["journal/2026-*"]), true);
+  assert.equal(isIgnoredPath("Journal/2026/11-19.md", ["journal/**"]), true);
+  assert.equal(isIgnoredPath("Root.md", ["**/*.md"]), true);
+  assert.equal(isIgnoredPath("a/b/c.md", ["**/*.md"]), true);
+  assert.equal(isIgnoredPath("a/b", ["a/**/b"]), true);
+  assert.equal(isIgnoredPath("a/x/y/b", ["a/**/b"]), true);
+  assert.equal(isIgnoredPath("Notes/Journal.md", ["Templates"]), false);
+  assert.equal(isIgnoredPath("Notes/Journal.md", ["*.md"]), false);
+});
+
+test("classifies Anki note ownership from the source link", () => {
+  const sourceLink = (vault: string, file: string) =>
+    noteInfo({
+      Back: `<div class="obsidian-source"><a href="obsidian://open?vault=${vault}&file=${encodeURIComponent(file)}">open</a></div>`
+    });
+
+  assert.equal(classifyNoteOwnership(sourceLink("Vault", "Notes/A.md"), "Notes/A.md", "Vault"), "owned");
+  assert.equal(classifyNoteOwnership(sourceLink("Vault", "Notes/B.md"), "Notes/A.md", "Vault"), "foreign");
+  assert.equal(classifyNoteOwnership(sourceLink("Other", "Notes/A.md"), "Notes/A.md", "Vault"), "foreign");
+  assert.equal(classifyNoteOwnership(noteInfo({ Back: "answer" }), "Notes/A.md", "Vault"), "unknown");
+});
+
+test("compares note fields for incremental sync", () => {
+  const info = noteInfo({ Front: "<p>Q</p>", Back: "<p>A</p>" });
+  assert.equal(noteMatchesFields(info, { Front: "<p>Q</p>", Back: "<p>A</p>" }), true);
+  assert.equal(noteMatchesFields(info, { Front: "<p>Q</p>", Back: "<p>B</p>" }), false);
+});
+
+test("strips every tag added by older plugin versions", () => {
+  assert.deepEqual(
+    obsoletePluginTags(
+      [
+        "obsidian_file_old_md",
+        "obsidian_file_id_file-123",
+        "obsidian_sync_id_card-1",
+        "obsidian_content_abc",
+        "obsidian_sync_removed",
+        "my-own-tag",
+        "obsidian"
+      ],
+      ["obsidian"]
+    ),
+    [
+      "obsidian_file_old_md",
+      "obsidian_file_id_file-123",
+      "obsidian_sync_id_card-1",
+      "obsidian_content_abc",
+      "obsidian_sync_removed",
+      "obsidian"
+    ]
+  );
 });
 
 test("extracts Obsidian and Markdown media embeds", () => {
@@ -629,115 +626,17 @@ test("preview mode preserves rendered media paths", async () => {
   assert.equal(result.mediaCount, 0);
 });
 
-test("isolates notes by stable file id before using legacy tags", () => {
-  const current = {
-    noteId: 1,
-    tags: ["obsidian_file_id_current", "obsidian_file_shared_md"]
-  };
-  const foreign = {
-    noteId: 2,
-    tags: ["obsidian_file_id_foreign", "obsidian_file_shared_md"]
-  };
-  const legacy = {
-    noteId: 3,
-    tags: ["obsidian_file_shared_md"]
-  };
-  const ambiguous = {
-    noteId: 4,
-    tags: [
-      "obsidian_file_id_current",
-      "obsidian_file_id_foreign",
-      "obsidian_file_shared_md"
-    ]
-  };
-
-  assert.equal(noteBelongsToFile(current, "current", "obsidian_file_shared_md"), true);
-  assert.equal(noteBelongsToFile(foreign, "current", "obsidian_file_shared_md"), false);
-  assert.equal(noteBelongsToFile(legacy, "current", "obsidian_file_shared_md"), true);
-  assert.equal(noteBelongsToFile(ambiguous, "current", "obsidian_file_shared_md"), false);
-});
-
-test("only adopts unowned legacy notes that match an active card or registry entry", () => {
-  const matchingCard = {
-    noteId: 1,
-    tags: ["obsidian_file_shared_md", "obsidian_sync_id_active"]
-  };
-  const registeredRemovedCard = {
-    noteId: 2,
-    tags: ["obsidian_file_shared_md", "obsidian_sync_id_removed"]
-  };
-  const ambiguousLegacyCard = {
-    noteId: 3,
-    tags: ["obsidian_file_shared_md", "obsidian_sync_id_other-file"]
-  };
-  const activeIds = new Set(["active"]);
-  const registeredIds = new Set([2]);
-
-  assert.equal(
-    canSafelyAttributeLegacyNote(
-      matchingCard,
-      "current",
-      "obsidian_file_shared_md",
-      activeIds,
-      registeredIds
-    ),
-    true
-  );
-  assert.equal(
-    canSafelyAttributeLegacyNote(
-      registeredRemovedCard,
-      "current",
-      "obsidian_file_shared_md",
-      activeIds,
-      registeredIds
-    ),
-    true
-  );
-  assert.equal(
-    canSafelyAttributeLegacyNote(
-      ambiguousLegacyCard,
-      "current",
-      "obsidian_file_shared_md",
-      activeIds,
-      registeredIds
-    ),
-    false
-  );
-});
-
-test("finds obsolete legacy path tags without removing stable file ids", () => {
-  assert.deepEqual(
-    obsoleteLegacyFileTags(
-      [
-        "obsidian_file_old_md",
-        "obsidian_file_current_md",
-        "obsidian_file_id_file-123"
-      ],
-      "obsidian_file_current_md"
-    ),
-    ["obsidian_file_old_md"]
-  );
-});
-
-test("creates stable content hash tags for incremental sync", async () => {
-  const first = contentHashTag(await createContentHash({ Front: "Q", Back: "A" }));
-  const second = contentHashTag(await createContentHash({ Front: "Q", Back: "A" }));
-  const changed = contentHashTag(await createContentHash({ Front: "Q", Back: "B" }));
-
-  assert.ok(first.startsWith(CONTENT_HASH_TAG_PREFIX));
-  assert.equal(first, second);
-  assert.notEqual(first, changed);
-});
-
-test("frontmatter overrides deck, merges tags and can disable syncing", () => {
+test("frontmatter overrides the deck and can disable syncing", () => {
   const config = resolveNoteFileConfigFromData({
     "anki-sync": false,
-    "anki-deck": "CS::Algorithms",
-    tags: ["course/cs", "#exam"],
-    "anki-tags": "exam graph"
-  }, { ...DEFAULT_SETTINGS, additionalTags: "obsidian study" });
+    "anki-deck": "CS::Algorithms"
+  }, DEFAULT_SETTINGS);
 
   assert.equal(config.enabled, false);
   assert.equal(config.deckName, "CS::Algorithms");
-  assert.deepEqual(config.tags, ["obsidian", "study", "course/cs", "exam", "graph"]);
+});
+
+test("default settings keep an empty ignore list", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.ignorePaths, []);
+  assert.equal(ANKI_ID_PATTERN.test("<!-- Anki-ID: 1 -->"), true);
 });

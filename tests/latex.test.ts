@@ -4,7 +4,7 @@ import { protectLatexForAnki } from "../src/latex";
 
 test("converts inline and display LaTeX to Anki MathJax delimiters", () => {
   const protectedLatex = protectLatexForAnki(
-    "面積是 $\\pi r^2$。\n\n$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$"
+    "面积是 $\\pi r^2$。\n\n$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$"
   );
   const html = protectedLatex.restore(`<p>${protectedLatex.markdown}</p>`);
 
@@ -28,7 +28,7 @@ test("does not convert dollars after an unclosed inline-code delimiter", () => {
 });
 
 test("keeps escaped dollars and ordinary currency as text", () => {
-  const source = "價格是 \\$5，折扣後從 $10 到 $8。";
+  const source = "价格是 \\$5，折扣后从 $10 到 $8。";
   const protectedLatex = protectLatexForAnki(source);
 
   assert.equal(protectedLatex.markdown, source);

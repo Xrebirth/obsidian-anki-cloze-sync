@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 import type AnkiFlashcardSyncPlugin from "./main";
+import { normalizeVaultPath } from "./ignore";
 
 export class AnkiSyncSettingTab extends PluginSettingTab {
   constructor(app: App, private readonly plugin: AnkiFlashcardSyncPlugin) {
@@ -13,8 +14,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
     // and cache invalidation, instead of the declarative API's default saveData().
     return [
       {
-        name: "AnkiConnect URL",
-        desc: "通常不需要修改。Anki 必須保持開啟。",
+        name: "AnkiConnect 地址",
+        desc: "通常不需要修改。Anki 必须保持运行。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text
@@ -28,8 +29,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "Anki 牌組",
-        desc: "不存在時會自動建立。",
+        name: "Anki 牌组",
+        desc: "不存在时会自动创建。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.deckName).onChange(async (value) => {
@@ -40,8 +41,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "Cloze 筆記類型",
-        desc: "不存在時會自動建立；既有類型必須有 Text 與 Back Extra 欄位。",
+        name: "Cloze 笔记类型",
+        desc: "不存在时会自动创建；已有类型必须有 Text 与 Back Extra 字段。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.modelName).onChange(async (value) => {
@@ -52,8 +53,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "程式碼練習筆記類型",
-        desc: "不存在時會自動建立；既有類型必須有 Front 與 Back 欄位，其卡片模板會由外掛管理為程式碼練習模式。",
+        name: "代码练习笔记类型",
+        desc: "不存在时会自动创建；已有类型必须有 Front 与 Back 字段，其卡片模板由插件管理为代码练习模式。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.basicModelName).onChange(async (value) => {
@@ -64,8 +65,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "標準問答筆記類型",
-        desc: "用於 Q/A 卡片，不含文字輸入框；不存在時會自動建立。",
+        name: "标准问答笔记类型",
+        desc: "用于 Q/A 卡片，不含文字输入框；不存在时会自动创建。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.plainBasicModelName).onChange(async (value) => {
@@ -76,8 +77,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "影像遮擋筆記類型",
-        desc: "用於 IO/MASK 卡片；支援同圖多遮罩依序揭示，且遮罩會隨圖片等比例縮放。",
+        name: "图像遮挡笔记类型",
+        desc: "用于 IO/MASK 卡片；支持同图多遮罩依次揭示，且遮罩会随图片等比例缩放。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.imageOcclusionModelName).onChange(async (value) => {
@@ -88,8 +89,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "選擇題筆記類型",
-        desc: "用於 QS/QM 卡片；單選與多選共用此類型，既有類型必須有 Question、Options、Explanation、Mode 與 Back Extra 欄位。",
+        name: "选择题笔记类型",
+        desc: "用于 QS/QM 卡片；单选与多选共用此类型，已有类型必须有 Question、Options、Explanation、Mode 与 Back Extra 字段。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(this.plugin.settings.choiceModelName).onChange(async (value) => {
@@ -100,8 +101,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "自動同步",
-        desc: "Markdown 檔案儲存後，自動同步其中的填空、問答、選擇題與影像遮擋卡。",
+        name: "自动同步",
+        desc: "Markdown 文件保存后，自动同步其中的填空、问答、选择题与图像遮挡卡。",
         render: (setting: Setting) => {
           setting.addToggle((toggle) =>
             toggle.setValue(this.plugin.settings.autoSync).onChange(async (value) => {
@@ -112,14 +113,14 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "卡片從 Markdown 移除後",
-        desc: "建議先暫停：保留複習紀錄並加上 obsidian_sync_removed 標籤；永久刪除會要求確認。",
+        name: "卡片从 Markdown 移除后",
+        desc: "建议先暂停：保留复习记录并暂停 Anki 卡片；永久删除会要求确认。",
         render: (setting: Setting) => {
           setting.addDropdown((dropdown) =>
             dropdown
-              .addOption("keep", "保留不處理")
-              .addOption("suspend", "暫停並標記（建議）")
-              .addOption("delete", "永久刪除")
+              .addOption("keep", "保留不处理")
+              .addOption("suspend", "暂停（建议）")
+              .addOption("delete", "永久删除")
               .setValue(this.plugin.settings.removedCardAction)
               .onChange(async (value) => {
                 this.plugin.settings.removedCardAction = value as "keep" | "suspend" | "delete";
@@ -129,8 +130,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "同步圖片與附件",
-        desc: "將筆記內嵌的圖片、音訊與影片複製到 Anki media，並改寫卡片路徑。",
+        name: "同步图片与附件",
+        desc: "将笔记内嵌的图片、音频与视频复制到 Anki media，并改写卡片路径。",
         render: (setting: Setting) => {
           setting.addToggle((toggle) =>
             toggle.setValue(this.plugin.settings.syncMedia).onChange(async (value) => {
@@ -141,8 +142,8 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "自動同步延遲（毫秒）",
-        desc: "避免連續輸入時過度呼叫 AnkiConnect，最小值為 500。",
+        name: "自动同步延迟（毫秒）",
+        desc: "避免连续输入时过度调用 AnkiConnect，最小值为 500。",
         render: (setting: Setting) => {
           setting.addText((text) =>
             text.setValue(String(this.plugin.settings.autoSyncDelayMs)).onChange(async (value) => {
@@ -156,18 +157,114 @@ export class AnkiSyncSettingTab extends PluginSettingTab {
         }
       },
       {
-        name: "額外標籤",
-        desc: "以空白分隔。外掛也會加入用於追蹤來源與卡片 ID 的標籤。",
+        name: "忽略的文件路径",
+        desc: "填写 Vault 相对路径，一行一个，可拖动排序；填写文件夹路径可忽略整个文件夹。支持 *、** 与 ? 通配符。被忽略的文件不会自动同步、参与整库同步或生成同步预览。",
         render: (setting: Setting) => {
-          setting.addText((text) =>
-            text.setValue(this.plugin.settings.additionalTags).onChange(async (value) => {
-              this.plugin.settings.additionalTags = value;
-              await this.plugin.saveSettings();
-            })
-          );
+          setting.settingEl.addClass("anki-sync-setting-ignore");
+          const container = setting.settingEl.createDiv({ cls: "anki-sync-ignore-container" });
+          this.renderIgnorePaths(container);
         }
       }
     ] satisfies SettingDefinitionItem[];
+  }
+
+  private renderIgnorePaths(container: HTMLElement): void {
+    container.empty();
+    const list = container.createDiv({ cls: "anki-sync-ignore-list" });
+    const paths = this.plugin.settings.ignorePaths;
+
+    if (paths.length === 0) {
+      list.createDiv({ cls: "anki-sync-ignore-empty", text: "尚未添加忽略路径" });
+    } else {
+      paths.forEach((path, index) => this.renderIgnoreRow(list, path, index));
+    }
+
+    const addRow = container.createDiv({ cls: "anki-sync-ignore-add" });
+    const input = addRow.createEl("textarea", {
+      cls: "anki-sync-ignore-input",
+      attr: {
+        rows: "2",
+        placeholder: "例如：\n模板/\n日记/2026-*.md"
+      }
+    });
+    const addButton = addRow.createEl("button", { text: "添加" });
+    const submit = async (): Promise<void> => {
+      const additions = input.value
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      if (additions.length === 0) return;
+      const known = new Set(paths.map(normalizeVaultPath));
+      for (const addition of additions) {
+        const normalized = normalizeVaultPath(addition);
+        if (!normalized || known.has(normalized)) continue;
+        known.add(normalized);
+        this.plugin.settings.ignorePaths = [...this.plugin.settings.ignorePaths, addition];
+      }
+      input.value = "";
+      await this.plugin.saveSettings();
+      this.renderIgnorePaths(container);
+    };
+    addButton.addEventListener("click", () => {
+      void submit();
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        void submit();
+      }
+    });
+  }
+
+  private renderIgnoreRow(list: HTMLElement, path: string, index: number): void {
+    const row = list.createDiv({ cls: "anki-sync-ignore-row" });
+    row.draggable = true;
+    row.dataset.path = path;
+    row.dataset.index = String(index);
+    row.createSpan({ cls: "anki-sync-ignore-handle", text: "⠿", attr: { "aria-hidden": "true" } });
+    row.createSpan({ cls: "anki-sync-ignore-path", text: path });
+    const remove = row.createEl("button", {
+      cls: "anki-sync-ignore-remove",
+      text: "✕",
+      attr: { type: "button", "aria-label": `移除 ${path}` }
+    });
+    remove.addEventListener("click", () => {
+      this.plugin.settings.ignorePaths = this.plugin.settings.ignorePaths.filter(
+        (value) => value !== path
+      );
+      void this.plugin.saveSettings().then(() => {
+        this.renderIgnorePaths(list.parentElement ?? list);
+      });
+    });
+
+    row.addEventListener("dragstart", (event) => {
+      row.addClass("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", path);
+      }
+    });
+    row.addEventListener("dragend", () => {
+      row.removeClass("is-dragging");
+      void this.persistIgnoreOrder(list);
+    });
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const dragging = list.querySelector<HTMLElement>(".anki-sync-ignore-row.is-dragging");
+      if (!dragging || dragging === row) return;
+      const rect = row.getBoundingClientRect();
+      const insertAfter = event.clientY > rect.top + rect.height / 2;
+      list.insertBefore(dragging, insertAfter ? row.nextSibling : row);
+    });
+  }
+
+  private async persistIgnoreOrder(list: HTMLElement): Promise<void> {
+    const ordered = Array.from(list.querySelectorAll<HTMLElement>(".anki-sync-ignore-row"))
+      .map((row) => row.dataset.path)
+      .filter((path): path is string => typeof path === "string" && path.length > 0);
+    if (ordered.length === 0) return;
+    this.plugin.settings.ignorePaths = ordered;
+    await this.plugin.saveSettings();
   }
 
   // Obsidian < 1.13 uses display(); share definitions to keep both UIs in sync.

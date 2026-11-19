@@ -28,8 +28,12 @@ interface AddNoteParams {
   deckName: string;
   modelName: string;
   fields: Record<string, string>;
-  tags: string[];
   options: { allowDuplicate: boolean };
+}
+
+export interface AnkiNoteField {
+  value: string;
+  order: number;
 }
 
 export interface AnkiNoteInfo {
@@ -37,6 +41,7 @@ export interface AnkiNoteInfo {
   modelName: string;
   tags: string[];
   cards: number[];
+  fields?: Record<string, AnkiNoteField | string>;
 }
 
 export class AnkiConnectClient {
@@ -55,12 +60,12 @@ export class AnkiConnectClient {
     } catch (error) {
       const detail = error instanceof Error ? `（${error.message}）` : "";
       throw new Error(
-        `無法連線到 AnkiConnect（${this.endpoint}）。請確認 Anki 已開啟且已安裝 AnkiConnect。${detail}`
+        `无法连接到 AnkiConnect（${this.endpoint}）。请确认 Anki 已开启且已安装 AnkiConnect。${detail}`
       );
     }
 
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`AnkiConnect 回傳 HTTP ${response.status}`);
+      throw new Error(`AnkiConnect 返回 HTTP ${response.status}`);
     }
 
     const payload = response.json as AnkiResponse<T>;
@@ -93,7 +98,7 @@ export class AnkiConnectClient {
     const templateName = Object.prototype.hasOwnProperty.call(templates, "Cloze")
       ? "Cloze"
       : Object.keys(templates)[0];
-    if (!templateName) throw new Error(`Anki 筆記類型「${modelName}」沒有可更新的卡片模板。`);
+    if (!templateName) throw new Error(`Anki 笔记类型「${modelName}」没有可更新的卡片模板。`);
     await this.invoke("updateModelTemplates", {
       model: {
         name: modelName,
@@ -127,7 +132,7 @@ export class AnkiConnectClient {
     const templateName = Object.prototype.hasOwnProperty.call(templates, "Card 1")
       ? "Card 1"
       : Object.keys(templates)[0];
-    if (!templateName) throw new Error(`Anki 筆記類型「${modelName}」沒有可更新的卡片模板。`);
+    if (!templateName) throw new Error(`Anki 笔记类型「${modelName}」没有可更新的卡片模板。`);
     await this.invoke("updateModelTemplates", {
       model: {
         name: modelName,
@@ -163,7 +168,7 @@ export class AnkiConnectClient {
     const templateName = Object.prototype.hasOwnProperty.call(templates, "Card 1")
       ? "Card 1"
       : Object.keys(templates)[0];
-    if (!templateName) throw new Error(`Anki 筆記類型「${modelName}」沒有可更新的卡片模板。`);
+    if (!templateName) throw new Error(`Anki 笔记类型「${modelName}」没有可更新的卡片模板。`);
     await this.invoke("updateModelTemplates", {
       model: {
         name: modelName,
@@ -199,7 +204,7 @@ export class AnkiConnectClient {
     const templateName = Object.prototype.hasOwnProperty.call(templates, "Card 1")
       ? "Card 1"
       : Object.keys(templates)[0];
-    if (!templateName) throw new Error(`Anki 筆記類型「${modelName}」沒有可更新的卡片模板。`);
+    if (!templateName) throw new Error(`Anki 笔记类型「${modelName}」没有可更新的卡片模板。`);
     await this.invoke("updateModelTemplates", {
       model: {
         name: modelName,
@@ -235,7 +240,7 @@ export class AnkiConnectClient {
     const templateName = Object.prototype.hasOwnProperty.call(templates, "Card 1")
       ? "Card 1"
       : Object.keys(templates)[0];
-    if (!templateName) throw new Error(`Anki 筆記類型「${modelName}」沒有可更新的卡片模板。`);
+    if (!templateName) throw new Error(`Anki 笔记类型「${modelName}」没有可更新的卡片模板。`);
     await this.invoke("updateModelTemplates", {
       model: {
         name: modelName,
@@ -273,7 +278,7 @@ export class AnkiConnectClient {
     const missingFields = fields.filter((field) => !existingFields.includes(field));
     if (missingFields.length > 0) {
       throw new Error(
-        `Anki 筆記類型「${modelName}」缺少必要欄位：${missingFields.join("、")}。`
+        `Anki 笔记类型「${modelName}」缺少必要字段：${missingFields.join("、")}。`
       );
     }
   }
@@ -288,11 +293,11 @@ export class AnkiConnectClient {
     }));
     const responses = await this.invoke<Array<AnkiResponse<number[]>>>("multi", { actions });
     if (responses.length !== uniqueIds.length) {
-      throw new Error("AnkiConnect multi 回傳的結果數量不正確。");
+      throw new Error("AnkiConnect multi 返回的结果数量不正确。");
     }
     for (let index = 0; index < uniqueIds.length; index += 1) {
       const response = responses[index];
-      if (!response) throw new Error("AnkiConnect multi 缺少查詢結果。");
+      if (!response) throw new Error("AnkiConnect multi 缺少查询结果。");
       if (response.error) throw new Error(`AnkiConnect：${response.error}`);
       result.set(uniqueIds[index] as string, response.result);
     }

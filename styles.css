@@ -499,3 +499,87 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Ignored-file list in settings */
+.setting-item.anki-sync-setting-ignore {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.setting-item.anki-sync-setting-ignore .setting-item-info {
+  margin-bottom: 0.5rem;
+}
+
+.anki-sync-ignore-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.anki-sync-ignore-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.anki-sync-ignore-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  cursor: grab;
+}
+
+.anki-sync-ignore-row.is-dragging {
+  opacity: 0.5;
+}
+
+.anki-sync-ignore-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.anki-sync-ignore-path {
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.anki-sync-ignore-remove {
+  height: auto;
+  padding: 0 0.25rem;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.anki-sync-ignore-remove:hover {
+  color: var(--text-error);
+}
+
+.anki-sync-ignore-add {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.anki-sync-ignore-input {
+  flex: 1;
+  min-height: 3.2rem;
+  resize: vertical;
+  font-family: var(--font-monospace);
+}
+
+.anki-sync-ignore-empty {
+  padding: 0.35rem 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

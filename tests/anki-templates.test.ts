@@ -22,7 +22,7 @@ test("code practice front provides a multiline editor without answer comparison"
 
 test("code practice back shows the draft and reference answer separately", () => {
   assert.match(BASIC_CODE_BACK, /你的作答/);
-  assert.match(BASIC_CODE_BACK, /參考答案/);
+  assert.match(BASIC_CODE_BACK, /参考答案/);
   assert.match(BASIC_CODE_BACK, /\{\{Back}}/);
   assert.doesNotMatch(BASIC_CODE_BACK, /typeGood|typeBad|typeMissed/);
 });
@@ -48,7 +48,7 @@ test("cloze templates share the review shell and keep source metadata on the bac
 test("plain Q&A templates reveal the answer without a text input", () => {
   assert.match(PLAIN_BASIC_FRONT, /\{\{Front}}/);
   assert.doesNotMatch(PLAIN_BASIC_FRONT, /textarea|code-practice-input/);
-  assert.match(PLAIN_BASIC_BACK, /參考答案/);
+  assert.match(PLAIN_BASIC_BACK, /参考答案/);
   assert.match(PLAIN_BASIC_BACK, /\{\{Back}}/);
 });
 
@@ -82,7 +82,7 @@ test("image occlusion templates render multiple mask markup and reveal sequentia
   assert.match(IMAGE_OCCLUSION_BACK, /revealNext/);
   assert.match(IMAGE_OCCLUSION_BACK, /is-removing/);
   assert.doesNotMatch(IMAGE_OCCLUSION_BACK, /setTimeout\(revealNext/);
-  assert.match(IMAGE_OCCLUSION_BACK, />揭示下一個</);
+  assert.match(IMAGE_OCCLUSION_BACK, />揭示下一个</);
   assert.match(IMAGE_OCCLUSION_BACK, /\{\{#Answer}}/);
   assert.match(IMAGE_OCCLUSION_BACK, /\{\{Back Extra}}/);
 });

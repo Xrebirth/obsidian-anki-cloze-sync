@@ -20,7 +20,7 @@ export function buildImageOcclusionCardMarkdown(
   imageMarkdown: string,
   masks: ImageOcclusionMask[],
   answer: string,
-  syncId: string | null = null
+  ankiId: number | null = null
 ): string {
   const lines = [
     `IO: ${imageMarkdown}`,
@@ -33,7 +33,7 @@ export function buildImageOcclusionCardMarkdown(
       .filter((line) => line.trim() !== "");
     lines.push(`A: ${firstLine}`, ...remainingLines);
   }
-  if (syncId) lines.push(`<!-- anki-sync-id: ${syncId} -->`);
+  if (ankiId) lines.push(`<!-- Anki-ID: ${ankiId} -->`);
   return lines.join("\n");
 }
 
@@ -42,7 +42,7 @@ export function findImageOcclusionCardAtLine(
   line: number
 ): ParsedImageOcclusionCard | null {
   return parseImageOcclusionCards(markdown).find((card) => {
-    const lastLine = card.idLine ?? card.endLine;
+    const lastLine = card.markerLine ?? card.endLine;
     return line >= card.startLine && line <= lastLine;
   }) ?? null;
 }

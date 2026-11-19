@@ -12,12 +12,12 @@ export function diagnoseFrontmatter(markdown: string): SyncDiagnostic[] {
   try {
     const parsed: unknown = parseYaml(info.frontmatter);
     if (parsed !== null && !isRecord(parsed)) {
-      return [{ severity: "error", line: 1, message: "Frontmatter 必須是 YAML 鍵值物件。" }];
+      return [{ severity: "error", line: 1, message: "Frontmatter 必须是 YAML 键值对象。" }];
     }
     return [];
   } catch (error) {
     const detail = error instanceof Error ? `：${error.message}` : "";
-    return [{ severity: "error", line: 1, message: `Frontmatter YAML 無法解析${detail}` }];
+    return [{ severity: "error", line: 1, message: `Frontmatter YAML 无法解析${detail}` }];
   }
 }
 

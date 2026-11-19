@@ -1,50 +1,72 @@
 import {
-  CHOICE_OPTION_PATTERN,
   CHOICE_QUESTION_PATTERN,
   IMAGE_OCCLUSION_MASK_PATTERN,
   IMAGE_OCCLUSION_PATTERN,
-  SYNC_ID_PATTERN,
-  parseChoiceCards,
-  parseImageOcclusionCards,
-  parseFlashcards,
-  scanSyncIdMarkers
+  findLegacyFileId,
+  parseDocument,
+  scanAnkiIdMarkers,
+  scanLegacySyncIds
 } from "./parser";
-import type { SyncDiagnostic } from "./types";
+import type { ParsedFlashcard, SyncDiagnostic } from "./types";
 
 export interface MarkdownSyncIds {
-  fileId: string | null;
-  cardIds: string[];
+  legacyFileId: string | null;
+  ankiIds: number[];
+  legacySyncIds: string[];
 }
 
+/**
+ * Collects every Anki note ID referenced by a Markdown note. This is used for
+ * the vault-wide index, so it only scans marker lines instead of parsing cards.
+ */
 export function collectMarkdownSyncIds(markdown: string): MarkdownSyncIds {
-  const markers = scanSyncIdMarkers(markdown);
-  const fileId = markers.fileIds[0]?.id ?? null;
-  const cardIds = markers.cardIds.map((marker) => marker.id);
-  return { fileId, cardIds };
+  return {
+    legacyFileId: findLegacyFileId(markdown)?.id ?? null,
+    ankiIds: scanAnkiIdMarkers(markdown),
+    legacySyncIds: scanLegacySyncIds(markdown)
+  };
 }
 
+function isCoveredByCard(cards: ParsedFlashcard[], line: number): boolean {
+  return cards.some(
+    (card) => line >= card.startLine && line <= (card.markerLine ?? card.endLine)
+  );
+}
+
+/** Structural and format diagnostics for one Markdown note. */
 export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
   const diagnostics: SyncDiagnostic[] = [];
   const lines = markdown.split("\n");
-  const ids = collectMarkdownSyncIds(markdown);
-  const markers = scanSyncIdMarkers(markdown);
-  const seen = new Set<string>();
+  const document = parseDocument(markdown);
+  const cards = document.cards;
+  const cardStartLines = new Set(cards.map((card) => card.startLine));
+  diagnostics.push(...document.diagnostics);
 
   if (lines[0]?.trim() === "---" && !lines.slice(1).some((line) => line.trim() === "---")) {
-    diagnostics.push({ severity: "error", line: 1, message: "Frontmatter 缺少結尾的 ---。" });
+    diagnostics.push({ severity: "error", line: 1, message: "Frontmatter 缺少结尾的 ---。" });
   }
 
-  for (const id of ids.cardIds) {
-    if (seen.has(id)) {
-      diagnostics.push({ severity: "error", message: `卡片 ID 重複：${id}` });
+  const seenNoteIds = new Set<number>();
+  for (const noteId of scanAnkiIdMarkers(markdown)) {
+    if (seenNoteIds.has(noteId)) {
+      diagnostics.push({ severity: "error", message: `Anki-ID 重复：${noteId}` });
     }
-    seen.add(id);
+    seenNoteIds.add(noteId);
   }
-  if (markers.fileIds.length > 1) {
+  const seenLegacyIds = new Set<string>();
+  for (const legacyId of document.cards.flatMap((card) =>
+    card.legacySyncId ? [card.legacySyncId] : []
+  )) {
+    if (seenLegacyIds.has(legacyId)) {
+      diagnostics.push({ severity: "error", message: `旧版同步 ID 重复：${legacyId}` });
+    }
+    seenLegacyIds.add(legacyId);
+  }
+  if (document.legacyFileId) {
     diagnostics.push({
-      severity: "error",
-      line: (markers.fileIds[1]?.line ?? 0) + 1,
-      message: "同一份筆記內有多個來源檔案 ID。"
+      severity: "warning",
+      line: (document.legacyFileIdLine ?? 0) + 1,
+      message: "检测到旧版 anki-sync-file-id 标记，下次同步成功后会自动移除。"
     });
   }
 
@@ -53,81 +75,52 @@ export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
     const line = lines[index] ?? "";
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
     if (inFence) continue;
-    if (/^\s*Q(?:C)?\s*[:：]/i.test(line)) {
-      const cardStartsHere = parseFlashcards(lines.slice(index).join("\n"))[0]?.startLine === 0;
-      if (!cardStartsHere) {
+
+    if (/^\s*Q(?:C)?\s*[:：]/i.test(line) && !cardStartLines.has(index)) {
+      if (!isCoveredByCard(cards, index)) {
         diagnostics.push({
           severity: "warning",
           line: index + 1,
-          message: "問題缺少相符且非空白的答案，這一題不會同步。"
+          message: "问题缺少相符且非空白的答案，这一题不会同步。"
         });
       }
     }
-    const choiceQuestion = line.match(CHOICE_QUESTION_PATTERN);
-    if (choiceQuestion) {
-      const cardStartsHere = parseChoiceCards(lines.slice(index).join("\n"))[0]?.startLine === 0;
-      if (!cardStartsHere) {
-        const optionMatches: RegExpMatchArray[] = [];
-        for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-          const candidate = lines[cursor] ?? "";
-          if (
-            candidate.trim() === "" ||
-            /^\s*(?:#{1,6}\s+|(?:---+|___+|\*\*\*+)\s*$)/.test(candidate) ||
-            CHOICE_QUESTION_PATTERN.test(candidate) ||
-            /^\s*Q(?:C)?\s*[:：]/i.test(candidate) ||
-            IMAGE_OCCLUSION_PATTERN.test(candidate) ||
-            /^\s*E\s*[:：]/i.test(candidate) ||
-            SYNC_ID_PATTERN.test(candidate)
-          ) {
-            break;
-          }
-          const option = candidate.match(CHOICE_OPTION_PATTERN);
-          if (option) optionMatches.push(option);
-        }
-        const correctCount = optionMatches.filter(
-          (option) => option[1] === "-"
-        ).length;
-        const hasCompletedMarker = optionMatches.some(
-          (option) => (option[1] ?? "").toLowerCase() === "x"
-        );
-        const mode = choiceQuestion[1]?.toUpperCase();
-        const detail = hasCompletedMarker
-          ? "請以 [-] 標記正確答案；[x] 會被 Obsidian 視為已完成待辦"
-          : optionMatches.length < 2
-          ? "至少需要兩個非空白選項"
-          : mode === "S" && correctCount !== 1
-            ? "單選題必須剛好標記一個 [-]"
-            : mode === "M" && correctCount < 1
-              ? "多選題至少需要標記一個 [-]"
-              : "題目文字不可空白";
+
+    if (CHOICE_QUESTION_PATTERN.test(line) && !cardStartLines.has(index)) {
+      if (!isCoveredByCard(cards, index)) {
         diagnostics.push({
           severity: "warning",
           line: index + 1,
-          message: `選擇題格式無效：${detail}，這一題不會同步。`
+          message: "选择题格式无效：至少需要两个选项，并恰好用 [-] 标记正确答案。"
         });
       }
     }
-    if (IMAGE_OCCLUSION_PATTERN.test(line)) {
-      const cardStartsHere = parseImageOcclusionCards(lines.slice(index).join("\n"))[0]?.startLine === 0;
-      if (!cardStartsHere) {
+
+    if (IMAGE_OCCLUSION_PATTERN.test(line) && !cardStartLines.has(index)) {
+      if (!isCoveredByCard(cards, index)) {
         diagnostics.push({
           severity: "warning",
           line: index + 1,
-          message: "影像遮擋題缺少圖片或有效的 MASK；座標格式應為 x, y, 寬, 高，且範圍為 0–100。"
+          message: "影像遮挡题缺少图片或有效的 MASK；坐标格式应为 x, y, 宽, 高，且范围为 0–100。"
         });
       }
     }
+
     let maskBlockStart = index - 1;
     while (maskBlockStart >= 0 && IMAGE_OCCLUSION_MASK_PATTERN.test(lines[maskBlockStart] ?? "")) {
       maskBlockStart -= 1;
     }
-    if (IMAGE_OCCLUSION_MASK_PATTERN.test(line) && !IMAGE_OCCLUSION_PATTERN.test(lines[maskBlockStart] ?? "")) {
+    if (
+      IMAGE_OCCLUSION_MASK_PATTERN.test(line) &&
+      !IMAGE_OCCLUSION_PATTERN.test(lines[maskBlockStart] ?? "")
+    ) {
       diagnostics.push({
         severity: "warning",
         line: index + 1,
-        message: "MASK 前沒有對應的 IO 圖片，這一行不會同步。"
+        message: "MASK 前没有对应的 IO 图片，这一行不会同步。"
       });
     }
+
     let answerBlockStart = index - 1;
     while (answerBlockStart >= 0 && IMAGE_OCCLUSION_MASK_PATTERN.test(lines[answerBlockStart] ?? "")) {
       answerBlockStart -= 1;
@@ -135,23 +128,21 @@ export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
     const isImageOcclusionAnswer =
       IMAGE_OCCLUSION_MASK_PATTERN.test(lines[index - 1] ?? "") &&
       IMAGE_OCCLUSION_PATTERN.test(lines[answerBlockStart] ?? "");
-    if (/^\s*A(?:C)?\s*[:：]/i.test(line) && !isImageOcclusionAnswer && (index === 0 || !lines
-      .slice(0, index)
-      .some((candidate) => /^\s*Q(?:C)?\s*[:：]/i.test(candidate)))) {
+    if (/^\s*A(?:C)?\s*[:：]/i.test(line) && !isImageOcclusionAnswer && !isCoveredByCard(cards, index)) {
       diagnostics.push({
         severity: "warning",
         line: index + 1,
-        message: "答案前沒有對應的問題，這一行不會同步。"
+        message: "答案前没有对应的问题，这一行不会同步。"
       });
     }
   }
   if (inFence) {
-    diagnostics.push({ severity: "warning", message: "Markdown 程式碼區塊尚未關閉。" });
+    diagnostics.push({ severity: "warning", message: "Markdown 代码块尚未关闭。" });
   }
   const clozeStarts = markdown.match(/\{\{c\d+::/g)?.length ?? 0;
-  const parsedClozeCount = parseFlashcards(markdown).filter((card) => card.kind === "cloze").length;
+  const parsedClozeCount = cards.filter((card) => card.kind === "cloze").length;
   if (clozeStarts > 0 && parsedClozeCount === 0) {
-    diagnostics.push({ severity: "warning", message: "偵測到未完成或無法解析的 Cloze 語法。" });
+    diagnostics.push({ severity: "warning", message: "检测到未完成或无法解析的 Cloze 语法。" });
   }
   return diagnostics;
 }
@@ -164,17 +155,20 @@ export function findCrossFileIdConflicts(
   const diagnostics: SyncDiagnostic[] = [];
   for (const other of others) {
     if (other.path === currentPath) continue;
-    if (current.fileId && other.ids.fileId === current.fileId) {
+    const duplicates = current.ankiIds.filter((noteId) => other.ids.ankiIds.includes(noteId));
+    for (const noteId of new Set(duplicates)) {
       diagnostics.push({
         severity: "error",
-        message: `來源檔案 ID 也出現在「${other.path}」；可能是複製筆記造成。`
+        message: `Anki-ID ${noteId} 也出现在「${other.path}」；每张 Anki 卡片只能对应一个位置。`
       });
     }
-    const duplicateCards = current.cardIds.filter((id) => other.ids.cardIds.includes(id));
-    for (const id of new Set(duplicateCards)) {
+    const legacyDuplicates = current.legacySyncIds.filter((id) =>
+      other.ids.legacySyncIds.includes(id)
+    );
+    for (const legacyId of new Set(legacyDuplicates)) {
       diagnostics.push({
-        severity: "error",
-        message: `卡片 ID ${id} 也出現在「${other.path}」。`
+        severity: "warning",
+        message: `旧版同步 ID ${legacyId} 也出现在「${other.path}」；请避免复制含有同步标记的笔记。`
       });
     }
   }

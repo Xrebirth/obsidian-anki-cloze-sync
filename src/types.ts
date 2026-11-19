@@ -9,8 +9,8 @@ export interface AnkiSyncSettings {
   removedCardAction: RemovedCardAction;
   autoSync: boolean;
   autoSyncDelayMs: number;
-  additionalTags: string;
   syncMedia: boolean;
+  ignorePaths: string[];
 }
 
 export type RemovedCardAction = "keep" | "suspend" | "delete";
@@ -26,22 +26,25 @@ export const DEFAULT_SETTINGS: AnkiSyncSettings = {
   removedCardAction: "suspend",
   autoSync: true,
   autoSyncDelayMs: 1500,
-  additionalTags: "obsidian",
-  syncMedia: true
+  syncMedia: true,
+  ignorePaths: []
 };
 
 export interface NoteFileConfig {
   enabled: boolean;
   deckName: string;
-  tags: string[];
 }
 
+/**
+ * Local bookkeeping for one Markdown note. Notes no longer carry plugin tags,
+ * so the plugin itself remembers which Anki note IDs belong to which file.
+ */
 export interface FileSyncRegistryEntry {
   path: string;
   noteIds: number[];
   updatedAt: number;
-  managedTags?: string[];
   deckName?: string;
+  suspendedNoteIds?: number[];
 }
 
 export type FileSyncRegistry = Record<string, FileSyncRegistryEntry>;
@@ -49,25 +52,47 @@ export type FileSyncRegistry = Record<string, FileSyncRegistryEntry>;
 export interface StoredPluginData {
   settings: AnkiSyncSettings;
   syncRegistry: FileSyncRegistry;
+  /** Notes suspended by the plugin; restored when their card comes back. */
+  suspendedNoteIds?: number[];
 }
 
-export interface ParsedClozeCard {
-  kind: "cloze";
-  id: string | null;
-  markdown: string;
+export interface DeckBlockInfo {
+  /** Line containing `<!-- Deck_START -->`. */
+  startLine: number;
+  /** Line containing `<!-- Deck_END -->`. */
+  endLine: number;
+  /** First content line after `Deck_START` (may be past the end when empty). */
+  contentStartLine: number;
+  /** Last content line before `Deck_END`. */
+  contentEndLine: number;
+  /** `<!-- Anki-ID: n -->` markers written after `Deck_END`, in card order. */
+  markerIds: Array<{ noteId: number; line: number }>;
+  /** Line index where the next missing marker should be inserted. */
+  insertLine: number;
+}
+
+export interface ParsedCardBase {
+  /** Anki note id (never a card id) parsed from `<!-- Anki-ID: n -->`. */
+  ankiId: number | null;
+  /** Legacy UUID parsed from `<!-- anki-sync-id: ... -->`, used for migration only. */
+  legacySyncId: string | null;
+  /** Line holding the card-level marker, when one exists. */
+  markerLine: number | null;
+  /** Set when this card lives inside a `Deck_START`/`Deck_END` block. */
+  deckBlock: DeckBlockInfo | null;
   startLine: number;
   endLine: number;
-  idLine: number | null;
 }
 
-export interface ParsedBasicCard {
+export interface ParsedClozeCard extends ParsedCardBase {
+  kind: "cloze";
+  markdown: string;
+}
+
+export interface ParsedBasicCard extends ParsedCardBase {
   kind: "basic" | "plain";
-  id: string | null;
   questionMarkdown: string;
   answerMarkdown: string;
-  startLine: number;
-  endLine: number;
-  idLine: number | null;
 }
 
 export interface ChoiceOption {
@@ -75,16 +100,12 @@ export interface ChoiceOption {
   correct: boolean;
 }
 
-export interface ParsedChoiceCard {
+export interface ParsedChoiceCard extends ParsedCardBase {
   kind: "choice";
   mode: "single" | "multiple";
-  id: string | null;
   questionMarkdown: string;
   options: ChoiceOption[];
   explanationMarkdown: string;
-  startLine: number;
-  endLine: number;
-  idLine: number | null;
 }
 
 export interface ImageOcclusionMask {
@@ -94,15 +115,11 @@ export interface ImageOcclusionMask {
   height: number;
 }
 
-export interface ParsedImageOcclusionCard {
+export interface ParsedImageOcclusionCard extends ParsedCardBase {
   kind: "image-occlusion";
-  id: string | null;
   imageMarkdown: string;
   masks: ImageOcclusionMask[];
   answerMarkdown: string;
-  startLine: number;
-  endLine: number;
-  idLine: number | null;
 }
 
 export type ParsedFlashcard =
@@ -110,6 +127,16 @@ export type ParsedFlashcard =
   | ParsedBasicCard
   | ParsedChoiceCard
   | ParsedImageOcclusionCard;
+
+export interface ParsedDocument {
+  cards: ParsedFlashcard[];
+  deckBlocks: DeckBlockInfo[];
+  /** Legacy `<!-- anki-sync-file-id: ... -->` value, removed on the next sync. */
+  legacyFileId: string | null;
+  legacyFileIdLine: number | null;
+  /** Structural problems such as an unclosed Deck block. */
+  diagnostics: SyncDiagnostic[];
+}
 
 export interface SyncResult {
   created: number;
@@ -131,7 +158,6 @@ export interface SyncPreview {
   filePath: string;
   enabled: boolean;
   deckName: string;
-  tags: string[];
   created: number;
   updated: number;
   unchanged: number;

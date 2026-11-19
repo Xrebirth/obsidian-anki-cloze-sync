@@ -31,7 +31,7 @@ function insertCard(editor: Editor, markdown: string): void {
 class ImageFileSuggestModal extends FuzzySuggestModal<TFile> {
   constructor(app: App, private readonly onChoose: (file: TFile) => void) {
     super(app);
-    this.setPlaceholder("選擇要製作遮擋題的圖片…");
+    this.setPlaceholder("选择要制作遮挡题的图片…");
   }
 
   getItems(): TFile[] {
@@ -94,12 +94,12 @@ class ImageOcclusionEditorModal extends Modal {
       cls: "anki-image-occlusion-kicker"
     });
     titleGroup.createEl("h2", {
-      text: this.initial?.editing ? "編輯多區域遮擋" : "建立多區域遮擋"
+      text: this.initial?.editing ? "编辑多区域遮挡" : "建立多区域遮挡"
     });
     heading.createSpan({ text: this.file.name, cls: "anki-image-occlusion-filename" });
 
     contentEl.createEl("p", {
-      text: "拖曳空白處新增遮罩；拖曳既有遮罩可移動，拖曳四角可縮放。下方清單可調整揭示順序或移除。",
+      text: "拖动空白处新增遮罩；拖动现有遮罩可移动，拖动四角可缩放。下方列表可调整揭示顺序或移除。",
       cls: "anki-image-occlusion-instruction"
     });
 
@@ -146,7 +146,7 @@ class ImageOcclusionEditorModal extends Modal {
       stage.addClass("is-ready");
     };
     image.addEventListener("load", activateStage);
-    image.addEventListener("error", () => new Notice("無法載入這張圖片，請確認檔案仍存在。"));
+    image.addEventListener("error", () => new Notice("无法加载这张图片，请确认文件仍存在。"));
     if (image.complete && image.naturalWidth > 0) activateStage();
     stage.addEventListener("pointerdown", (event) => this.beginDrawing(event, stage));
     stage.addEventListener("pointermove", (event) => this.continuePointerInteraction(event, stage));
@@ -155,15 +155,15 @@ class ImageOcclusionEditorModal extends Modal {
 
     const dataStrip = contentEl.createDiv({ cls: "anki-image-occlusion-data-strip" });
     dataStrip.createSpan({ text: "Reveal queue" });
-    this.coordinateLabel = dataStrip.createEl("code", { text: "尚未框選" });
+    this.coordinateLabel = dataStrip.createEl("code", { text: "尚未框选" });
     this.maskList = contentEl.createDiv({ cls: "anki-image-occlusion-mask-list" });
     this.renderCommittedMasks();
     this.renderMaskList();
 
     new Setting(contentEl)
       .setClass("anki-image-occlusion-answer")
-      .setName("補充答案（選填）")
-      .setDesc("所有遮罩依序移除後顯示；可再加上整張圖的名稱、解釋或提示。")
+      .setName("补充答案（选填）")
+      .setDesc("所有遮罩依序移除后显示；可再加上整张图的名称、解释或提示。")
       .addTextArea((text) =>
         text
           .setPlaceholder("例如：左心室")
@@ -182,11 +182,11 @@ class ImageOcclusionEditorModal extends Modal {
     );
     actions.addButton((button) =>
       button
-        .setButtonText(this.initial?.editing ? "儲存遮擋卡" : "新增多區域遮擋卡")
+        .setButtonText(this.initial?.editing ? "储存遮挡卡" : "新增多区域遮挡卡")
         .setCta()
         .onClick(() => {
           if (this.masks.length === 0) {
-            new Notice("請先在圖片上框選至少一個遮擋區域。");
+            new Notice("请先在图片上框选至少一个遮挡区域。");
             return;
           }
           this.onSubmit([...this.masks], this.answer);
@@ -243,7 +243,7 @@ class ImageOcclusionEditorModal extends Modal {
     this.startPoint = null;
     if (!this.draftMask || this.draftMask.width < 1 || this.draftMask.height < 1) {
       this.cancelDraft();
-      new Notice("遮擋區域太小，請拖曳一個較大的矩形。");
+      new Notice("遮挡区域太小，请拖动一个较大的矩形。");
       return;
     }
     this.masks.push(this.draftMask);
@@ -286,7 +286,7 @@ class ImageOcclusionEditorModal extends Modal {
     };
     this.committedOverlays[index]?.addClass("is-active");
     this.coordinateLabel?.setText(
-      `${mode === "move" ? "移動" : "縮放"} #${index + 1} · ${serializeImageOcclusionMask(mask)}`
+      `${mode === "move" ? "移动" : "缩放"} #${index + 1} · ${serializeImageOcclusionMask(mask)}`
     );
   }
 
@@ -302,7 +302,7 @@ class ImageOcclusionEditorModal extends Modal {
     const overlay = this.committedOverlays[interaction.index];
     if (overlay) this.applyMaskPosition(overlay, next);
     this.coordinateLabel?.setText(
-      `${interaction.mode === "move" ? "移動" : "縮放"} #${interaction.index + 1} · ${serializeImageOcclusionMask(next)}`
+      `${interaction.mode === "move" ? "移动" : "缩放"} #${interaction.index + 1} · ${serializeImageOcclusionMask(next)}`
     );
   }
 
@@ -389,7 +389,7 @@ class ImageOcclusionEditorModal extends Modal {
         attr: {
           role: "button",
           tabindex: "0",
-          "aria-label": `第 ${index + 1} 個遮罩；拖曳可移動`
+          "aria-label": `第 ${index + 1} 个遮罩；拖动可移动`
         }
       });
       if (!overlay) return;
@@ -409,7 +409,7 @@ class ImageOcclusionEditorModal extends Modal {
           cls: `anki-image-occlusion-resize-handle is-${corner}`,
           attr: {
             role: "button",
-            "aria-label": `從${label}角縮放第 ${index + 1} 個遮罩`
+            "aria-label": `从${label}角缩放第 ${index + 1} 个遮罩`
           }
         });
         handle.addEventListener("pointerdown", (event) => {
@@ -429,7 +429,7 @@ class ImageOcclusionEditorModal extends Modal {
     if (!this.maskList) return;
     this.maskList.empty();
     if (this.masks.length === 0) {
-      this.maskList.createEl("p", { text: "拖曳圖片以加入第一個遮罩。" });
+      this.maskList.createEl("p", { text: "拖动图片以加入第一个遮罩。" });
       this.updateMaskCount();
       return;
     }
@@ -443,7 +443,7 @@ class ImageOcclusionEditorModal extends Modal {
         text: "↑",
         attr: {
           type: "button",
-          "aria-label": `將第 ${index + 1} 個遮罩提前揭示`
+          "aria-label": `将第 ${index + 1} 个遮罩提前揭示`
         }
       });
       moveEarlier.disabled = index === 0;
@@ -452,14 +452,14 @@ class ImageOcclusionEditorModal extends Modal {
         text: "↓",
         attr: {
           type: "button",
-          "aria-label": `將第 ${index + 1} 個遮罩延後揭示`
+          "aria-label": `将第 ${index + 1} 个遮罩延后揭示`
         }
       });
       moveLater.disabled = index === this.masks.length - 1;
       moveLater.addEventListener("click", () => this.moveMaskInQueue(index, 1));
       controls.createEl("button", {
         text: "移除",
-        attr: { type: "button", "aria-label": `移除第 ${index + 1} 個遮罩` }
+        attr: { type: "button", "aria-label": `移除第 ${index + 1} 个遮罩` }
       }).addEventListener("click", () => this.removeMask(index));
     });
     this.updateMaskCount();
@@ -467,7 +467,7 @@ class ImageOcclusionEditorModal extends Modal {
 
   private updateMaskCount(): void {
     this.coordinateLabel?.setText(
-      this.masks.length === 0 ? "尚未框選" : `${this.masks.length} 個遮罩 · 依編號揭示`
+      this.masks.length === 0 ? "尚未框选" : `${this.masks.length} 个遮罩 · 依编号揭示`
     );
   }
 
@@ -497,7 +497,7 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
       )
       : null;
     if (!(imageFile instanceof TFile) || !IMAGE_EXTENSIONS.has(imageFile.extension.toLowerCase())) {
-      new Notice("無法找到這張遮擋卡使用的圖片；請先修正 IO 圖片連結。");
+      new Notice("无法找到这张遮挡卡使用的图片；请先修正 IO 图片链接。");
       return;
     }
     new ImageOcclusionEditorModal(
@@ -508,9 +508,9 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
           existingCard.imageMarkdown,
           masks,
           answer,
-          existingCard.id
+          existingCard.ankiId
         );
-        const lastLine = existingCard.idLine ?? existingCard.endLine;
+        const lastLine = existingCard.markerLine ?? existingCard.endLine;
         const hasFollowingLine = lastLine < editor.lastLine();
         editor.replaceRange(
           hasFollowingLine ? `${markdown}\n` : markdown,
@@ -525,7 +525,7 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
           line: existingCard.startLine + markdownLines.length - 1,
           ch: finalLine.length
         });
-        new Notice(`已更新包含 ${masks.length} 個區域的影像遮擋卡。`);
+        new Notice(`已更新包含 ${masks.length} 个区域的影像遮挡卡。`);
       },
       {
         masks: existingCard.masks,
@@ -544,7 +544,7 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
 
   const openEditor = (file: TFile): void => {
     if (!IMAGE_EXTENSIONS.has(file.extension.toLowerCase())) {
-      new Notice("影像遮擋目前只支援圖片檔。");
+      new Notice("图像遮挡目前只支持图片文件。");
       return;
     }
     new ImageOcclusionEditorModal(app, file, (masks, answer) => {
@@ -552,7 +552,7 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
         editor,
         buildImageOcclusionCardMarkdown(`![[${file.path}]]`, masks, answer)
       );
-      new Notice(`已新增包含 ${masks.length} 個區域的影像遮擋卡。`);
+      new Notice(`已新增包含 ${masks.length} 个区域的影像遮挡卡。`);
     }).open();
   };
 

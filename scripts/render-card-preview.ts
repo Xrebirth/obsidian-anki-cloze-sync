@@ -13,8 +13,8 @@ import {
 } from "../src/anki-templates";
 
 const question = `
-<h2>請實作 Min Heap 的 <code>push</code> 操作</h2>
-<p>加入新節點後，維持完全二元樹結構與 heap property，並分析時間複雜度。</p>`;
+<h2>请实现 Min Heap 的 <code>push</code> 操作</h2>
+<p>加入新节点后，维持完全二叉树结构与 heap property，并分析时间复杂度。</p>`;
 const reference = `
 <pre><code>push(value: number): void {
   this.heap.push(value);
@@ -28,28 +28,28 @@ const reference = `
     index = parent;
   }
 }</code></pre>
-<p>時間複雜度：<code>O(log n)</code></p>
-<div class="obsidian-source"><a href="#">在 Obsidian 開啟「Heap」</a></div>`;
+<p>时间复杂度：<code>O(log n)</code></p>
+<div class="obsidian-source"><a href="#">在 Obsidian 打开「Heap」</a></div>`;
 const cloze = `
-<p>Min Heap 的每個父節點都必須 <span class="cloze">小於或等於</span> 它的子節點，因此根節點保存全域最小值。</p>`;
+<p>Min Heap 的每个父节点都必须 <span class="cloze">小于或等于</span> 它的子节点，因此根节点保存全域最小值。</p>`;
 const plainQuestion = `
-<h2>Min Heap 的根節點保存什麼？</h2>
-<p>先在心中作答，再顯示答案。</p>`;
+<h2>Min Heap 的根节点保存什么？</h2>
+<p>先在心中作答，再显示答案。</p>`;
 const plainAnswer = `
-<p>根節點保存整棵 Min Heap 的<strong>最小值</strong>。</p>
-<div class="obsidian-source"><a href="#">在 Obsidian 開啟「Heap」</a></div>`;
+<p>根节点保存整棵 Min Heap 的<strong>最小值</strong>。</p>
+<div class="obsidian-source"><a href="#">在 Obsidian 打开「Heap」</a></div>`;
 const choiceQuestion = `
-<h2>下列哪些操作的時間複雜度是 <code>O(log n)</code>？</h2>
-<p>以平衡搜尋樹與二元堆的典型實作為準。</p>`;
+<h2>下列哪些操作的时间复杂度是 <code>O(log n)</code>？</h2>
+<p>以平衡搜索树与二叉堆的典型实现为准。</p>`;
 const choiceOptions = [
   [true, "在 Min Heap 插入元素"],
-  [false, "在未排序陣列搜尋任意值"],
-  [true, "在 AVL Tree 搜尋鍵值"],
-  [false, "讀取陣列指定索引"]
+  [false, "在未排序数组搜索任意值"],
+  [true, "在 AVL Tree 搜索键值"],
+  [false, "读取数组指定索引"]
 ].map(([correct, content], index) =>
   `<div class="choice-option" data-choice-index="${index}" data-correct="${correct}"><span class="choice-option-marker">${index + 1}</span><div class="choice-option-content"><p>${content}</p></div><span class="choice-option-result"></span></div>`
 ).join("");
-const choiceExplanation = `<p>Heap 插入與 AVL Tree 搜尋都沿著樹高移動；未排序陣列搜尋是 <code>O(n)</code>，陣列索引存取是 <code>O(1)</code>。</p>`;
+const choiceExplanation = `<p>Heap 插入与 AVL Tree 搜索都沿着树高移动；未排序数组搜索是 <code>O(n)</code>，数组索引访问是 <code>O(1)</code>。</p>`;
 const occlusionSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">
   <rect width="800" height="480" fill="#dfe9e4"/>
@@ -58,7 +58,7 @@ const occlusionSvg = `
   <circle cx="318" cy="207" r="28" fill="#e9ae91"/><circle cx="493" cy="207" r="28" fill="#e9ae91"/>
   <text x="400" y="445" text-anchor="middle" font-family="serif" font-size="26" fill="#344a43">HEART / STRUCTURE STUDY</text>
 </svg>`;
-const occlusionImage = `<img alt="心臟構造示意圖" src="data:image/svg+xml;base64,${Buffer.from(occlusionSvg).toString("base64")}">`;
+const occlusionImage = `<img alt="心脏构造示意图" src="data:image/svg+xml;base64,${Buffer.from(occlusionSvg).toString("base64")}">`;
 
 const replaceFields = (template: string, fields: Record<string, string>): string =>
   Object.entries(fields).reduce(
@@ -74,7 +74,7 @@ const back = replaceFields(BASIC_CODE_BACK, { Front: question, Back: reference }
   .replace(/<script>[\s\S]*?<\/script>/g, "");
 const clozeCard = replaceFields(CLOZE_BACK, {
   "cloze:Text": cloze,
-  "Back Extra": `<div>來源：Data Structures/Heap.md</div>${reference.match(/<div class="obsidian-source">[\s\S]*<\/div>/)?.[0] ?? ""}`
+  "Back Extra": `<div>来源：Data Structures/Heap.md</div>${reference.match(/<div class="obsidian-source">[\s\S]*<\/div>/)?.[0] ?? ""}`
 });
 const plainFront = replaceFields(PLAIN_BASIC_FRONT, { Front: plainQuestion });
 const plainBack = replaceFields(PLAIN_BASIC_BACK, {
@@ -86,7 +86,7 @@ const choiceFields = {
   Options: choiceOptions,
   Explanation: choiceExplanation,
   Mode: "multiple",
-  "Back Extra": `<div class="obsidian-source"><a href="#">在 Obsidian 開啟「Complexity」</a></div>`
+  "Back Extra": `<div class="obsidian-source"><a href="#">在 Obsidian 打开「Complexity」</a></div>`
 };
 const choiceFront = replaceFields(CHOICE_FRONT, choiceFields)
   .replace(/<script>[\s\S]*?<\/script>/g, "")
@@ -97,16 +97,16 @@ const choiceBack = replaceFields(CHOICE_BACK, choiceFields)
   .replace(/<script>[\s\S]*?<\/script>/g, "")
   .replace('class="choice-option" data-choice-index="0"', 'class="choice-option is-correct" data-choice-index="0"')
   .replace('class="choice-option" data-choice-index="2"', 'class="choice-option is-missed" data-choice-index="2"')
-  .replace("正在核對答案…", "核對結果 · 答對 1 項，選錯 0 項，漏選 1 項。");
+  .replace("正在核对答案…", "核对结果 · 答对 1 项，选错 0 项，漏选 1 项。");
 const occlusionFields = {
   Image: occlusionImage,
   Mask: [
-    '<span class="image-occlusion-mask" data-order="1" style="left:23%;top:28%;width:16%;height:18%;" aria-label="影像遮擋區域 1"></span>',
-    '<span class="image-occlusion-mask" data-order="2" style="left:61%;top:28%;width:16%;height:18%;" aria-label="影像遮擋區域 2"></span>',
-    '<span class="image-occlusion-mask" data-order="3" style="left:45%;top:52%;width:18%;height:24%;" aria-label="影像遮擋區域 3"></span>'
+    '<span class="image-occlusion-mask" data-order="1" style="left:23%;top:28%;width:16%;height:18%;" aria-label="影像遮挡区域 1"></span>',
+    '<span class="image-occlusion-mask" data-order="2" style="left:61%;top:28%;width:16%;height:18%;" aria-label="影像遮挡区域 2"></span>',
+    '<span class="image-occlusion-mask" data-order="3" style="left:45%;top:52%;width:18%;height:24%;" aria-label="影像遮挡区域 3"></span>'
   ].join(""),
-  Answer: "<p><strong>心臟構造</strong>：依序辨識左右心房與心室。</p>",
-  "Back Extra": `<div class="obsidian-source"><a href="#">在 Obsidian 開啟「Anatomy」</a></div>`
+  Answer: "<p><strong>心脏构造</strong>：依序辨识左右心房与心室。</p>",
+  "Back Extra": `<div class="obsidian-source"><a href="#">在 Obsidian 打开「Anatomy」</a></div>`
 };
 const occlusionFront = replaceFields(IMAGE_OCCLUSION_FRONT, occlusionFields);
 const occlusionBack = replaceFields(IMAGE_OCCLUSION_BACK, occlusionFields)

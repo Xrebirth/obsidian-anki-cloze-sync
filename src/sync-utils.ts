@@ -1,3 +1,5 @@
+import type { AnkiNoteInfo } from "./anki-connect";
+
 export function findStaleNoteIds(
   knownNoteIds: Iterable<number>,
   activeNoteIds: Iterable<number>
@@ -6,95 +8,111 @@ export function findStaleNoteIds(
   return [...new Set(knownNoteIds)].filter((noteId) => !active.has(noteId));
 }
 
-export const CONTENT_HASH_TAG_PREFIX = "obsidian_content_";
+/** Legacy tags added by older releases; every one of them is removed on sync. */
+export const LEGACY_PLUGIN_TAG_PREFIXES = [
+  "obsidian_sync_id_",
+  "obsidian_file_id_",
+  "obsidian_file_",
+  "obsidian_content_"
+] as const;
 export const REMOVED_CARD_TAG = "obsidian_sync_removed";
-export const FILE_ID_TAG_PREFIX = "obsidian_file_id_";
-export const LEGACY_FILE_TAG_PREFIX = "obsidian_file_";
-export const SYNC_ID_TAG_PREFIX = "obsidian_sync_id_";
 
-export interface TaggedNote {
-  noteId: number;
-  tags: string[];
+export const legacyFileIdTag = (fileId: string): string => `obsidian_file_id_${fileId}`;
+export const legacySyncIdTag = (syncId: string): string => `obsidian_sync_id_${syncId}`;
+export const legacyPathTag = (path: string): string =>
+  `obsidian_file_${path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+
+export function isLegacyPluginTag(tag: string): boolean {
+  return (
+    tag === REMOVED_CARD_TAG ||
+    LEGACY_PLUGIN_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix))
+  );
 }
 
-export function mergeNoteIdsBySyncId(
-  syncIds: Iterable<string>,
-  queriedNoteIds: ReadonlyMap<string, readonly number[]>,
-  ownedNotes: Iterable<TaggedNote>
-): Map<string, number[]> {
-  const desiredIds = new Set(syncIds);
-  const result = new Map<string, number[]>();
+/** Tags that must be stripped from an Anki note the plugin touches. */
+export function obsoletePluginTags(
+  tags: string[],
+  legacyManagedTags: Iterable<string> = []
+): string[] {
+  const managed = new Set(legacyManagedTags);
+  return tags.filter((tag) => isLegacyPluginTag(tag) || managed.has(tag));
+}
 
-  for (const syncId of desiredIds) {
-    result.set(syncId, [...new Set(queriedNoteIds.get(syncId) ?? [])]);
-  }
+const SOURCE_LINK_PATTERN = /obsidian:\/\/open\?[^"'\s<>]*/g;
 
-  for (const note of ownedNotes) {
-    for (const tag of note.tags) {
-      if (!tag.startsWith(SYNC_ID_TAG_PREFIX)) continue;
-      const syncId = tag.slice(SYNC_ID_TAG_PREFIX.length);
-      if (!desiredIds.has(syncId)) continue;
-      const noteIds = result.get(syncId) ?? [];
-      if (!noteIds.includes(note.noteId)) noteIds.push(note.noteId);
-      result.set(syncId, noteIds);
+export interface NoteSourceLink {
+  vault: string | null;
+  file: string | null;
+}
+
+function normalizeVaultPath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.?\//, "").toLowerCase();
+}
+
+export function noteFieldValue(
+  note: AnkiNoteInfo,
+  fieldName: string
+): string | null {
+  const field = note.fields?.[fieldName];
+  if (!field) return null;
+  return typeof field === "string" ? field : field.value ?? null;
+}
+
+export function noteSourceLinks(note: AnkiNoteInfo): NoteSourceLink[] {
+  const links: NoteSourceLink[] = [];
+  for (const value of Object.values(note.fields ?? {})) {
+    const text = typeof value === "string" ? value : value?.value;
+    if (typeof text !== "string" || !text.includes("obsidian://open")) continue;
+    for (const match of text.matchAll(SOURCE_LINK_PATTERN)) {
+      try {
+        const url = new URL(match[0].replaceAll("&amp;", "&"));
+        links.push({
+          vault: url.searchParams.get("vault"),
+          file: url.searchParams.get("file")
+        });
+      } catch {
+        // Ignore malformed links; they carry no ownership information.
+      }
     }
   }
-
-  return result;
+  return links;
 }
 
-export function noteBelongsToFile(
-  note: TaggedNote,
-  fileSyncId: string | null,
-  legacyFileTag: string
-): boolean {
-  const fileIdTags = note.tags.filter((tag) => tag.startsWith(FILE_ID_TAG_PREFIX));
-  if (fileIdTags.length > 0) {
-    return (
-      fileSyncId !== null &&
-      fileIdTags.length === 1 &&
-      fileIdTags[0] === `${FILE_ID_TAG_PREFIX}${fileSyncId}`
-    );
+export type NoteOwnership = "owned" | "foreign" | "unknown";
+
+/**
+ * Notes created by this plugin advertise their source note through an
+ * `obsidian://` link. Without tags, that link is the only safe way to notice a
+ * copied Anki-ID before the plugin overwrites an unrelated note.
+ */
+export function classifyNoteOwnership(
+  note: AnkiNoteInfo,
+  filePath: string,
+  vaultName: string
+): NoteOwnership {
+  const links = noteSourceLinks(note);
+  if (links.length === 0) return "unknown";
+  const expectedPath = normalizeVaultPath(filePath);
+  const expectedVault = vaultName.toLowerCase();
+  let sawForeign = false;
+  for (const link of links) {
+    if (!link.file) continue;
+    const samePath = normalizeVaultPath(link.file) === expectedPath;
+    const sameVault = !link.vault || link.vault.toLowerCase() === expectedVault;
+    if (samePath && sameVault) return "owned";
+    sawForeign = true;
   }
-  return note.tags.includes(legacyFileTag);
+  return sawForeign ? "foreign" : "unknown";
 }
 
-export function obsoleteLegacyFileTags(tags: string[], currentLegacyTag: string): string[] {
-  return tags.filter(
-    (tag) =>
-      tag.startsWith(LEGACY_FILE_TAG_PREFIX) &&
-      !tag.startsWith(FILE_ID_TAG_PREFIX) &&
-      tag !== currentLegacyTag
-  );
-}
-
-export function canSafelyAttributeLegacyNote(
-  note: TaggedNote,
-  fileSyncId: string | null,
-  legacyFileTag: string,
-  activeSyncIds: ReadonlySet<string>,
-  registeredNoteIds: ReadonlySet<number>
+export function noteMatchesFields(
+  note: AnkiNoteInfo,
+  fields: Record<string, string>
 ): boolean {
-  const fileIdTags = note.tags.filter((tag) => tag.startsWith(FILE_ID_TAG_PREFIX));
-  if (fileIdTags.length > 0) {
-    return (
-      fileSyncId !== null &&
-      fileIdTags.length === 1 &&
-      fileIdTags[0] === `${FILE_ID_TAG_PREFIX}${fileSyncId}`
-    );
+  for (const [name, value] of Object.entries(fields)) {
+    if ((noteFieldValue(note, name) ?? "") !== value) return false;
   }
-  if (!note.tags.includes(legacyFileTag)) return false;
-  if (registeredNoteIds.has(note.noteId)) return true;
-  return note.tags.some(
-    (tag) =>
-      tag.startsWith(SYNC_ID_TAG_PREFIX) &&
-      activeSyncIds.has(tag.slice(SYNC_ID_TAG_PREFIX.length))
-  );
-}
-
-export async function createContentHash(value: unknown): Promise<string> {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  return createBinaryHash(bytes);
+  return true;
 }
 
 export async function createBinaryHash(value: ArrayBuffer | ArrayBufferView): Promise<string> {
@@ -108,8 +126,4 @@ export async function createBinaryHash(value: ArrayBuffer | ArrayBufferView): Pr
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("")
     .slice(0, 24);
-}
-
-export function contentHashTag(hash: string): string {
-  return `${CONTENT_HASH_TAG_PREFIX}${hash}`;
 }

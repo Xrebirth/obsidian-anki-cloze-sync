@@ -15,34 +15,34 @@ test("finds an existing image occlusion card from its image, mask, answer, or id
     "IO: ![[heart.png]]",
     "<!-- MASK: 10, 20, 30, 15 -->",
     "A: 左心室",
-    "<!-- anki-sync-id: heart-card -->",
+    "<!-- Anki-ID: 4242 -->",
     "",
     "Conclusion"
   ].join("\n");
 
   for (const line of [2, 3, 4, 5]) {
-    assert.equal(findImageOcclusionCardAtLine(source, line)?.id, "heart-card");
+    assert.equal(findImageOcclusionCardAtLine(source, line)?.ankiId, 4242);
   }
   assert.equal(findImageOcclusionCardAtLine(source, 1), null);
   assert.equal(findImageOcclusionCardAtLine(source, 6), null);
 });
 
-test("rebuilds an edited card while preserving the image source and sync id", () => {
+test("rebuilds an edited card while preserving the image source and note id", () => {
   const markdown = buildImageOcclusionCardMarkdown(
     "![[anatomy/heart.png|600]]",
     [
       { x: 12.345, y: 20, width: 30, height: 15 },
       { x: 55, y: 42, width: 18, height: 12 }
     ],
-    "左心室\n負責將血液送往全身",
-    "heart-card"
+    "左心室\n负责将血液送往全身",
+    4242
   );
   const [card] = parseImageOcclusionCards(markdown);
 
   assert.match(markdown, /MASK: 12\.35, 20, 30, 15/);
   assert.equal(card?.imageMarkdown, "![[anatomy/heart.png|600]]");
-  assert.equal(card?.answerMarkdown, "左心室\n負責將血液送往全身");
-  assert.equal(card?.id, "heart-card");
+  assert.equal(card?.answerMarkdown, "左心室\n负责将血液送往全身");
+  assert.equal(card?.ankiId, 4242);
   assert.equal(card?.masks.length, 2);
 });
 

@@ -9,11 +9,11 @@ export class SyncPreviewModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass("anki-sync-preview");
-    contentEl.createEl("h2", { text: "Anki 同步預覽" });
+    contentEl.createEl("h2", { text: "Anki 同步预览" });
     contentEl.createEl("p", { text: this.preview.filePath, cls: "anki-sync-preview-path" });
 
     if (!this.preview.enabled) {
-      contentEl.createEl("p", { text: "此筆記已透過 anki-sync: false 排除同步。" });
+      contentEl.createEl("p", { text: "此笔记已被排除同步或位于忽略列表中。" });
       return;
     }
 
@@ -21,19 +21,17 @@ export class SyncPreviewModal extends Modal {
     for (const [label, value] of [
       ["新增", this.preview.created],
       ["更新", this.preview.updated],
-      ["不變", this.preview.unchanged],
+      ["不变", this.preview.unchanged],
       ["移除", this.preview.removed]
     ] as const) {
       const item = summary.createDiv({ cls: "anki-sync-preview-stat" });
       item.createEl("strong", { text: String(value) });
       item.createSpan({ text: label });
     }
-    contentEl.createEl("p", {
-      text: `牌組：${this.preview.deckName}｜標籤：${this.preview.tags.join("、") || "無"}`
-    });
+    contentEl.createEl("p", { text: `牌组：${this.preview.deckName}` });
 
     if (this.preview.diagnostics.length > 0) {
-      contentEl.createEl("h3", { text: "診斷" });
+      contentEl.createEl("h3", { text: "诊断" });
       const list = contentEl.createEl("ul", { cls: "anki-sync-diagnostics" });
       for (const diagnostic of this.preview.diagnostics) {
         const line = diagnostic.line ? `第 ${diagnostic.line} 行：` : "";
@@ -45,10 +43,10 @@ export class SyncPreviewModal extends Modal {
     }
 
     if (this.preview.cards.length > 0) {
-      contentEl.createEl("h3", { text: "卡片內容" });
+      contentEl.createEl("h3", { text: "卡片内容" });
       for (const [index, card] of this.preview.cards.entries()) {
         const details = contentEl.createEl("details", { cls: "anki-sync-card-preview" });
-        const status = card.status === "create" ? "新增" : card.status === "update" ? "更新" : "不變";
+        const status = card.status === "create" ? "新增" : card.status === "update" ? "更新" : "不变";
         details.createEl("summary", {
           text: `${index + 1}. 第 ${card.line} 行｜${card.kind.toUpperCase()}｜${status}`
         });
