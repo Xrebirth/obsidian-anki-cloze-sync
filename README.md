@@ -2,7 +2,7 @@
 
 将 Markdown 笔记中的**填空、问答、选择题、代码练习和图像遮挡卡片**同步到 Anki。插件通过 [AnkiConnect](https://ankiweb.net/shared/info/2055492159) 与 Anki 通信，使用 **Anki note ID** 精确关联，不在 Anki 中写入任何插件追踪标签。
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue?style=flat-square)](https://github.com/Xrebirth/obsidian-anki-cloze-sync/releases)
+[![Version](https://img.shields.io/badge/version-1.6.1-blue?style=flat-square)](https://github.com/Xrebirth/obsidian-anki-cloze-sync/releases)
 [![License](https://img.shields.io/github/license/Xrebirth/obsidian-anki-cloze-sync?style=flat-square)](LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.7-7C3AED?style=flat-square)](https://obsidian.md)
 [![AnkiConnect](https://img.shields.io/badge/AnkiConnect-2055492159-2E7D32?style=flat-square)](https://ankiweb.net/shared/info/2055492159)
@@ -352,6 +352,8 @@ A: Complete binary tree
 
 ### Frontmatter 控制
 
+Frontmatter 必须位于笔记顶部。示例：
+
 ```yaml
 ---
 anki-sync: true
@@ -362,16 +364,26 @@ tags:
 ---
 ```
 
-| 字段 | 说明 |
-| --- | --- |
-| `anki-sync` | `false` 时完全跳过这份笔记的同步 |
-| `anki-deck` | 覆盖全局牌组，支持 `父牌组::子牌组` |
-| `tags` | 写入 YAML 的标签会添加到每则 Anki note |
-| `anki-tags` | 旧版写法，仍会与 `tags` 合并 |
+| 字段 | 作用 | 取值示例 |
+| --- | --- | --- |
+| `anki-sync` | 是否同步此笔记 | `true`（默认）/ `false`（完全排除） |
+| `anki-deck` | 指定卡片进入的 Anki 牌组；支持多层级 | `Computer Science::Data Structures` |
+| `tags` | Obsidian 原生标签，会被插件继承并同步到 Anki | `- course/cs` |
+| `anki-tags` | 旧版标签字段，仍会与 `tags` 合并 | `- exam` |
 
-- 支持 YAML 列表或空格分隔字符串。
-- 开头的 `#` 会被移除。
-- 从 YAML 移除标签后，下次同步会从插件管理的 notes 中移除对应标签。
+`anki-deck` 支持任意层级的 `::`，例如：
+
+```yaml
+---
+anki-deck: 层级一::层级二::层级三
+---
+```
+
+- `anki-sync: false` 时完全跳过这份笔记：不新增、不更新、也不移除其 Anki 卡片。
+- `anki-deck` 不存在时会自动创建；不写时使用设置中的全局牌组。
+- `tags` 支持 YAML 列表（`- course/cs`）或空格分隔字符串（`tags: course/cs exam`）。
+- 标签开头的 `#` 会被移除；从 YAML 移除标签后，下次同步会从插件管理的 notes 中移除对应标签。
+- `anki-tags` 为旧版写法，仍会与 `tags` 合并；两者都为空时不添加任何标签。
 - 无法解析的 Frontmatter 只产生警告，不会阻断整个 Vault 同步。
 - 以 `<%` 开头的 Templater 模板文件会被跳过。
 
