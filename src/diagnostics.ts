@@ -33,6 +33,9 @@ function isCoveredByCard(cards: ParsedFlashcard[], line: number): boolean {
   );
 }
 
+const LEGACY_DECK_MARKER_PATTERN =
+  /^ {0,3}<!--\s*deck[ _-]?(?:start|end)\s*-->\s*$/i;
+
 /** Structural and format diagnostics for one Markdown note. */
 export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
   const diagnostics: SyncDiagnostic[] = [];
@@ -41,6 +44,31 @@ export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
   const cards = document.cards;
   const cardStartLines = new Set(cards.map((card) => card.startLine));
   diagnostics.push(...document.diagnostics);
+
+  const ignoredCards = cards.filter((card) => card.deckBlock === null);
+  if (ignoredCards.length > 0) {
+    diagnostics.push({
+      severity: "warning",
+      line: ignoredCards[0]?.startLine !== undefined
+        ? ignoredCards[0].startLine + 1
+        : undefined,
+      message: `检测到 ${ignoredCards.length} 张 Anki 区块外的题目，已忽略；请用 Anki_START / Anki_END 包裹。`
+    });
+  }
+
+  let legacyFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (/^\s*(```|~~~)/.test(line)) legacyFence = !legacyFence;
+    if (legacyFence || /^(?:\t| {4})/.test(line)) continue;
+    if (LEGACY_DECK_MARKER_PATTERN.test(line)) {
+      diagnostics.push({
+        severity: "error",
+        line: index + 1,
+        message: "检测到旧版 Deck_START / Deck_END 标记；请改用 Anki_START / Anki_END。"
+      });
+    }
+  }
 
   if (lines[0]?.trim() === "---" && !lines.slice(1).some((line) => line.trim() === "---")) {
     diagnostics.push({ severity: "error", line: 1, message: "Frontmatter 缺少结尾的 ---。" });
@@ -70,11 +98,40 @@ export function diagnoseMarkdown(markdown: string): SyncDiagnostic[] {
     });
   }
 
+  // Every marker must belong to a parsed card; otherwise syncing could detach
+  // or suspend an existing note because a question was temporarily malformed.
+  const associatedNoteIds = new Set(
+    cards.flatMap((card) => (card.ankiId !== null ? [card.ankiId] : []))
+  );
+  const orphanNoteIds = [...new Set(scanAnkiIdMarkers(markdown))].filter(
+    (noteId) => !associatedNoteIds.has(noteId)
+  );
+  if (orphanNoteIds.length > 0) {
+    diagnostics.push({
+      severity: "error",
+      message: `以下 Anki-ID 未对应到有效题目：${orphanNoteIds.join("、")}。请修正题目或删除这些标记。`
+    });
+  }
+  const associatedLegacyIds = new Set(
+    cards.flatMap((card) => (card.legacySyncId ? [card.legacySyncId] : []))
+  );
+  const orphanLegacyIds = [...new Set(scanLegacySyncIds(markdown))].filter(
+    (syncId) => !associatedLegacyIds.has(syncId)
+  );
+  if (orphanLegacyIds.length > 0) {
+    diagnostics.push({
+      severity: "error",
+      message: `以下旧版同步 ID 未对应到有效题目：${orphanLegacyIds.join("、")}。请修正题目或删除这些标记。`
+    });
+  }
+
   let inFence = false;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
     if (inFence) continue;
+    // Indented code samples are not cards and should not produce warnings.
+    if (/^(?:\t| {4})/.test(line)) continue;
 
     if (/^\s*Q(?:C)?\s*[:：]/i.test(line) && !cardStartLines.has(index)) {
       if (!isCoveredByCard(cards, index)) {

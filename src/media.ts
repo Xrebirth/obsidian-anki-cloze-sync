@@ -80,7 +80,15 @@ export async function rewriteEmbeddedMediaForAnki(
   const files = links
     .map((link) => app.metadataCache.getFirstLinkpathDest(link, sourceFile.path))
     .filter((file): file is TFile => file !== null && file.extension.toLowerCase() !== "md");
-  const mediaElements = Array.from(container.querySelectorAll<HTMLElement>(
+  // Rewrite a cloned copy inside an inert <template>. Setting src to an Anki
+  // media filename on a live element makes Obsidian try to load it via app://
+  // and logs a harmless but noisy ERR_FILE_NOT_FOUND.
+  const template = createEl("template");
+  template.content.append(
+    ...Array.from(container.childNodes).map((node) => node.cloneNode(true))
+  );
+  const root = template.content;
+  const mediaElements = Array.from(root.querySelectorAll<HTMLElement>(
     "img[src], audio[src], video[src], source[src]"
   ));
   const used = new Set<HTMLElement>();
@@ -130,5 +138,5 @@ export async function rewriteEmbeddedMediaForAnki(
     }
   }
 
-  return { html: container.innerHTML, mediaCount };
+  return { html: template.innerHTML, mediaCount };
 }

@@ -17,7 +17,13 @@ export function diagnoseFrontmatter(markdown: string): SyncDiagnostic[] {
     return [];
   } catch (error) {
     const detail = error instanceof Error ? `：${error.message}` : "";
-    return [{ severity: "error", line: 1, message: `Frontmatter YAML 无法解析${detail}` }];
+    // Templater templates and other generated notes can contain non-YAML
+    // frontmatter-like text. This must not block syncing the rest of the vault.
+    return [{
+      severity: "warning",
+      line: 1,
+      message: `Frontmatter YAML 无法解析（已忽略该 Frontmatter）${detail}`
+    }];
   }
 }
 

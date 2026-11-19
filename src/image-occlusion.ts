@@ -9,6 +9,7 @@ import {
   type ImageOcclusionResizeMode
 } from "./image-occlusion-utils";
 import { extractEmbeddedLinks } from "./media";
+import { parseDocument } from "./parser";
 import type { ImageOcclusionMask } from "./types";
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -488,6 +489,10 @@ class ImageOcclusionEditorModal extends Modal {
 export function openImageOcclusionCreator(app: App, editor: Editor): void {
   const source = editor.getValue();
   const existingCard = findImageOcclusionCardAtLine(source, editor.getCursor().line);
+  if (existingCard?.deletedInAnki) {
+    new Notice("这张卡片已标记为 Anki-Delete；请先删除该标记，再编辑并重新同步。");
+    return;
+  }
   if (existingCard) {
     const imageLink = extractEmbeddedLinks(existingCard.imageMarkdown)[0];
     const imageFile = imageLink
@@ -504,13 +509,20 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
       app,
       imageFile,
       (masks, answer) => {
+        const inBlock = Boolean(existingCard.deckBlock);
         const markdown = buildImageOcclusionCardMarkdown(
           existingCard.imageMarkdown,
           masks,
           answer,
-          existingCard.ankiId
+          inBlock
+            ? { preserveAnswerBlankLines: true }
+            : { ankiId: existingCard.ankiId }
         );
-        const lastLine = existingCard.markerLine ?? existingCard.endLine;
+        // Inside an Anki block only the content lines are replaced; the block
+        // markers and the Anki-ID line after Anki_END stay untouched.
+        const lastLine = inBlock
+          ? existingCard.endLine
+          : (existingCard.markerLine ?? existingCard.endLine);
         const hasFollowingLine = lastLine < editor.lastLine();
         editor.replaceRange(
           hasFollowingLine ? `${markdown}\n` : markdown,
@@ -547,12 +559,30 @@ export function openImageOcclusionCreator(app: App, editor: Editor): void {
       new Notice("图像遮挡目前只支持图片文件。");
       return;
     }
+    const cursorLine = editor.getCursor().line;
+    const enclosingBlock = parseDocument(source).deckBlocks.find(
+      (block) => cursorLine > block.startLine && cursorLine <= block.endLine
+    );
+    // Adding a card inside an existing block would shift its positional
+    // Anki-IDs, so insert a fresh block after the enclosing one instead.
+    if (enclosingBlock) {
+      const targetLine = enclosingBlock.insertLine;
+      if (targetLine <= editor.lastLine()) {
+        editor.setCursor({ line: targetLine, ch: 0 });
+      } else {
+        const lastLine = editor.lastLine();
+        editor.setCursor({ line: lastLine, ch: editor.getLine(lastLine).length });
+      }
+    }
     new ImageOcclusionEditorModal(app, file, (masks, answer) => {
       insertCard(
         editor,
-        buildImageOcclusionCardMarkdown(`![[${file.path}]]`, masks, answer)
+        buildImageOcclusionCardMarkdown(`![[${file.path}]]`, masks, answer, {
+          block: true,
+          preserveAnswerBlankLines: true
+        })
       );
-      new Notice(`已新增包含 ${masks.length} 个区域的影像遮挡卡。`);
+      new Notice(`已新增包含 ${masks.length} 个区域的图像遮挡卡。`);
     }).open();
   };
 

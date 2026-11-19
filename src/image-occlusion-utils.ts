@@ -16,24 +16,41 @@ export function serializeImageOcclusionMask(mask: ImageOcclusionMask): string {
     .join(", ");
 }
 
+export interface ImageOcclusionCardOptions {
+  /** Note ID appended under a plain (non-block) card. */
+  ankiId?: number | null;
+  /** Wrap the card in `<!-- Anki_START -->` / `<!-- Anki_END -->`. */
+  block?: boolean;
+  /** Keep blank lines inside a multi-line answer (only safe inside a block). */
+  preserveAnswerBlankLines?: boolean;
+}
+
 export function buildImageOcclusionCardMarkdown(
   imageMarkdown: string,
   masks: ImageOcclusionMask[],
   answer: string,
-  ankiId: number | null = null
+  options: ImageOcclusionCardOptions = {}
 ): string {
-  const lines = [
+  const lines: string[] = [];
+  if (options.block) lines.push("<!-- Anki_START -->");
+  lines.push(
     `IO: ${imageMarkdown}`,
     ...masks.map((mask) => `<!-- MASK: ${serializeImageOcclusionMask(mask)} -->`)
-  ];
+  );
   const trimmedAnswer = answer.trim();
   if (trimmedAnswer) {
-    const [firstLine = "", ...remainingLines] = trimmedAnswer
-      .split("\n")
-      .filter((line) => line.trim() !== "");
+    const answerLines = trimmedAnswer.split("\n");
+    const contentLines = options.preserveAnswerBlankLines
+      ? answerLines
+      : answerLines.filter((line) => line.trim() !== "");
+    const [firstLine = "", ...remainingLines] = contentLines;
     lines.push(`A: ${firstLine}`, ...remainingLines);
   }
-  if (ankiId) lines.push(`<!-- Anki-ID: ${ankiId} -->`);
+  if (options.block) {
+    lines.push("<!-- Anki_END -->");
+  } else if (options.ankiId) {
+    lines.push(`<!-- Anki-ID: ${options.ankiId} -->`);
+  }
   return lines.join("\n");
 }
 
@@ -42,8 +59,10 @@ export function findImageOcclusionCardAtLine(
   line: number
 ): ParsedImageOcclusionCard | null {
   return parseImageOcclusionCards(markdown).find((card) => {
-    const lastLine = card.markerLine ?? card.endLine;
-    return line >= card.startLine && line <= lastLine;
+    if (card.deckBlock === null) return false;
+    const firstLine = card.startLine;
+    const lastLine = card.endLine;
+    return line >= firstLine && line <= lastLine;
   }) ?? null;
 }
 

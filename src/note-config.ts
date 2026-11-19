@@ -8,6 +8,20 @@ function toBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+/**
+ * Reads YAML `tags` (and the legacy `anki-tags`) as Anki tags. Anki does not
+ * allow whitespace inside a tag, so comma/space separated strings are split;
+ * a leading `#` is removed and duplicates are dropped.
+ */
+function toTags(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((item) => toTags(item));
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[\s,]+/)
+    .map((tag) => tag.replace(/^#+/, "").trim())
+    .filter((tag) => tag.length > 0);
+}
+
 export function resolveNoteFileConfigFromData(
   frontmatter: Record<string, unknown>,
   settings: AnkiSyncSettings
@@ -19,6 +33,12 @@ export function resolveNoteFileConfigFromData(
 
   return {
     enabled: toBoolean(frontmatter["anki-sync"], true),
-    deckName
+    deckName,
+    tags: [
+      ...new Set([
+        ...toTags(frontmatter.tags),
+        ...toTags(frontmatter["anki-tags"])
+      ])
+    ]
   };
 }

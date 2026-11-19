@@ -28,7 +28,15 @@ export class SyncPreviewModal extends Modal {
       item.createEl("strong", { text: String(value) });
       item.createSpan({ text: label });
     }
-    contentEl.createEl("p", { text: `牌组：${this.preview.deckName}` });
+    const meta = contentEl.createDiv({ cls: "anki-sync-preview-meta" });
+    meta.createSpan({ cls: "anki-sync-pill", text: `牌组：${this.preview.deckName}` });
+    if (this.preview.tags.length === 0) {
+      meta.createSpan({ cls: "anki-sync-pill anki-sync-pill--muted", text: "无标签" });
+    } else {
+      for (const tag of this.preview.tags) {
+        meta.createSpan({ cls: "anki-sync-pill", text: `#${tag}` });
+      }
+    }
 
     if (this.preview.diagnostics.length > 0) {
       contentEl.createEl("h3", { text: "诊断" });

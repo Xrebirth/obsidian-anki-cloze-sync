@@ -11,16 +11,21 @@ import type {
 } from "./types";
 
 export const ANKI_ID_PATTERN = /^ {0,3}<!--\s*anki[-_ ]?id\s*[:：]\s*(\d+)\s*-->\s*$/i;
+export const ANKI_DELETE_PATTERN =
+  /^ {0,3}<!--\s*anki[-_ ]?delete\s*-->\s*$/i;
+export const ANKI_DELETE_MARKER = "<!-- Anki-Delete -->";
 export const LEGACY_SYNC_ID_PATTERN =
   /^ {0,3}<!--\s*anki[-_ ]sync[-_ ]id\s*[:：]\s*([a-zA-Z0-9-]+)\s*-->\s*$/i;
 export const LEGACY_FILE_ID_PATTERN =
   /^ {0,3}<!--\s*anki[-_ ]sync[-_ ]file[-_ ]id\s*[:：]\s*([a-zA-Z0-9-]+)\s*-->\s*$/i;
-export const DECK_START_PATTERN = /^ {0,3}<!--\s*deck[-_ ]?start\s*-->\s*$/i;
-export const DECK_END_PATTERN = /^ {0,3}<!--\s*deck[-_ ]?end\s*-->\s*$/i;
+export const BLOCK_START_PATTERN = /^ {0,3}<!--\s*anki[ _-]?start\s*-->\s*$/i;
+export const BLOCK_END_PATTERN = /^ {0,3}<!--\s*anki[ _-]?end\s*-->\s*$/i;
 export const ANKI_ID_MARKER_PREFIX = "<!-- Anki-ID:";
 const CLOZE_PATTERN = /\{\{c\d+::[\s\S]+?}}/;
 const HEADING_OR_RULE_PATTERN = /^\s*(?:#{1,6}\s+|(?:---+|___+|\*\*\*+)\s*$)/;
 const FENCE_PATTERN = /^\s*(```|~~~)/;
+const INDENTED_CODE_PATTERN = /^(?:\t| {4})/;
+const isIndentedCode = (line: string): boolean => INDENTED_CODE_PATTERN.test(line);
 const QUESTION_PATTERN = /^\s*Q\s*[:：]\s*(.*)$/i;
 const ANSWER_PATTERN = /^\s*A\s*[:：]\s*(.*)$/i;
 const CODE_QUESTION_PATTERN = /^\s*QC\s*[:：]\s*(.*)$/i;
@@ -44,26 +49,38 @@ const isQuestionBoundary = (line: string): boolean =>
 export interface LineMarker {
   ankiId: number | null;
   legacySyncId: string | null;
+  deleted: boolean;
 }
 
-/** Parses a single `Anki-ID` or legacy `anki-sync-id` comment line. */
+/** Parses a single `Anki-ID`, `Anki-Delete` or legacy `anki-sync-id` line. */
 export function parseLineMarker(line: string): LineMarker | null {
   const ankiMatch = line.match(ANKI_ID_PATTERN);
   if (ankiMatch) {
     const noteId = Number.parseInt(ankiMatch[1] ?? "", 10);
     if (Number.isSafeInteger(noteId) && noteId > 0) {
-      return { ankiId: noteId, legacySyncId: null };
+      return { ankiId: noteId, legacySyncId: null, deleted: false };
     }
+  }
+  if (ANKI_DELETE_PATTERN.test(line)) {
+    return { ankiId: null, legacySyncId: null, deleted: true };
   }
   const legacyMatch = line.match(LEGACY_SYNC_ID_PATTERN);
   if (legacyMatch) {
-    return { ankiId: null, legacySyncId: legacyMatch[1] ?? null };
+    return {
+      ankiId: null,
+      legacySyncId: legacyMatch[1] ?? null,
+      deleted: false
+    };
   }
   return null;
 }
 
 export function ankiIdMarker(noteId: number): string {
   return `<!-- Anki-ID: ${noteId} -->`;
+}
+
+export function ankiDeleteMarker(): string {
+  return ANKI_DELETE_MARKER;
 }
 
 interface FenceState {
@@ -90,9 +107,9 @@ export interface DeckScanResult {
 }
 
 /**
- * Finds `<!-- Deck_START -->` / `<!-- Deck_END -->` regions. The markers only
+ * Finds `<!-- Anki_START -->` / `<!-- Anki_END -->` regions. The markers only
  * delimit card content: they are never sent to Anki. Every `Anki-ID` comment
- * written after `Deck_END` belongs to the cards inside the block, in order.
+ * written after `Anki_END` belongs to the cards inside the block, in order.
  */
 export function scanDeckBlocks(markdown: string): DeckScanResult {
   const lines = markdown.split("\n");
@@ -100,9 +117,14 @@ export function scanDeckBlocks(markdown: string): DeckScanResult {
   const diagnostics: SyncDiagnostic[] = [];
   let fence: FenceState | null = null;
   let openStart: number | null = null;
+  let inFrontmatter = (lines[0] ?? "").trim() === "---";
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
+    if (inFrontmatter) {
+      if (index > 0 && line.trim() === "---") inFrontmatter = false;
+      continue;
+    }
     if (fence) {
       if (closesFence(line, fence)) fence = null;
       continue;
@@ -113,12 +135,12 @@ export function scanDeckBlocks(markdown: string): DeckScanResult {
       continue;
     }
 
-    if (DECK_START_PATTERN.test(line)) {
+    if (BLOCK_START_PATTERN.test(line)) {
       if (openStart !== null) {
         diagnostics.push({
           severity: "warning",
           line: index + 1,
-          message: "上一个 Deck_START 尚未结束，这一行会被当作普通内容。"
+          message: "上一个 Anki_START 尚未结束，这一行会被当作普通内容。"
         });
         continue;
       }
@@ -126,25 +148,34 @@ export function scanDeckBlocks(markdown: string): DeckScanResult {
       continue;
     }
 
-    if (!DECK_END_PATTERN.test(line)) continue;
+    if (!BLOCK_END_PATTERN.test(line)) continue;
     if (openStart === null) {
       diagnostics.push({
         severity: "warning",
         line: index + 1,
-        message: "检测到没有 Deck_START 的 Deck_END，已忽略这一行。"
+        message: "检测到没有 Anki_START 的 Anki_END，已忽略这一行。"
       });
       continue;
     }
 
     let cursor = index + 1;
     while (cursor < lines.length && (lines[cursor] ?? "").trim() === "") cursor += 1;
-    const markerIds: Array<{ noteId: number; line: number }> = [];
+    const markerIds: Array<{
+      noteId: number | null;
+      line: number;
+      deleted: boolean;
+    }> = [];
     while (cursor < lines.length) {
-      const markerMatch = (lines[cursor] ?? "").match(ANKI_ID_PATTERN);
-      if (!markerMatch) break;
-      const noteId = Number.parseInt(markerMatch[1] ?? "", 10);
-      if (Number.isSafeInteger(noteId) && noteId > 0) {
-        markerIds.push({ noteId, line: cursor });
+      const line = lines[cursor] ?? "";
+      const markerMatch = line.match(ANKI_ID_PATTERN);
+      if (markerMatch) {
+        const noteId = Number.parseInt(markerMatch[1] ?? "", 10);
+        if (!Number.isSafeInteger(noteId) || noteId <= 0) break;
+        markerIds.push({ noteId, line: cursor, deleted: false });
+      } else if (ANKI_DELETE_PATTERN.test(line)) {
+        markerIds.push({ noteId: null, line: cursor, deleted: true });
+      } else {
+        break;
       }
       cursor += 1;
     }
@@ -167,7 +198,7 @@ export function scanDeckBlocks(markdown: string): DeckScanResult {
     diagnostics.push({
       severity: "error",
       line: openStart + 1,
-      message: "Deck_START 缺少对应的 Deck_END，这个区块不会同步。"
+      message: "Anki_START 缺少对应的 Anki_END，这个区块不会同步。"
     });
   }
 
@@ -175,7 +206,7 @@ export function scanDeckBlocks(markdown: string): DeckScanResult {
 }
 
 /**
- * Replaces Deck regions with a horizontal rule so cards outside a block stop
+ * Replaces Anki block regions with a horizontal rule so cards outside a block stop
  * at the block boundary while line numbers stay stable.
  */
 function maskDeckRegions(lines: string[], blocks: DeckBlockInfo[]): string[] {
@@ -200,6 +231,7 @@ function startsStandaloneClozeParagraphs(
   const firstLine = lines[startLine] ?? "";
   if (
     parseLineMarker(firstLine) ||
+    isIndentedCode(firstLine) ||
     HEADING_OR_RULE_PATTERN.test(firstLine) ||
     FENCE_PATTERN.test(firstLine) ||
     isQuestionBoundary(firstLine)
@@ -255,6 +287,10 @@ function parseBasicCardsIn(
       index += 1;
       continue;
     }
+    if (!allowBlankLines && isIndentedCode(line)) {
+      index += 1;
+      continue;
+    }
 
     const codeQuestionMatch = line.match(CODE_QUESTION_PATTERN);
     const questionMatch = codeQuestionMatch ?? line.match(QUESTION_PATTERN);
@@ -274,7 +310,9 @@ function parseBasicCardsIn(
     while (cursor < to) {
       const candidate = lines[cursor] ?? "";
       if (!inQuestionFence) {
-        const possibleAnswer = candidate.match(answerPattern);
+        const possibleAnswer = isIndentedCode(candidate)
+          ? null
+          : candidate.match(answerPattern);
         if (possibleAnswer) {
           answerMatch = possibleAnswer;
           break;
@@ -287,9 +325,10 @@ function parseBasicCardsIn(
         continue;
       }
       if (!inQuestionFence) {
-        if (isQuestionBoundary(candidate)) break;
+        if (isQuestionBoundary(candidate) && !isIndentedCode(candidate)) break;
         if (
           !allowBlankLines &&
+          !isIndentedCode(candidate) &&
           (candidate.trim() === "" || HEADING_OR_RULE_PATTERN.test(candidate))
         ) {
           break;
@@ -338,14 +377,14 @@ function parseBasicCardsIn(
           }
           const blankStart = cursor;
           while (cursor < to && (lines[cursor] ?? "").trim() === "") cursor += 1;
-          // Outside a Deck block, blank lines may still be part of a multiline
+          // Outside an Anki block, blank lines may still be part of a multiline
           // answer; only stop when the next paragraph is an independent Cloze card.
           if (startsStandaloneClozeParagraphs(lines, cursor, to)) break;
           answerLines.push(...lines.slice(blankStart, cursor));
           continue;
         }
-        if (isQuestionBoundary(candidate)) break;
-        if (!allowBlankLines && HEADING_OR_RULE_PATTERN.test(candidate)) break;
+        if (isQuestionBoundary(candidate) && !isIndentedCode(candidate)) break;
+        if (!allowBlankLines && !isIndentedCode(candidate) && HEADING_OR_RULE_PATTERN.test(candidate)) break;
       }
       answerLines.push(candidate);
       endLine = cursor;
@@ -359,6 +398,7 @@ function parseBasicCardsIn(
         kind,
         ankiId: marker?.ankiId ?? null,
         legacySyncId: marker?.legacySyncId ?? null,
+        deletedInAnki: marker?.deleted ?? false,
         markerLine,
         deckBlock: null,
         questionMarkdown,
@@ -401,6 +441,10 @@ function parseChoiceCardsIn(
       index += 1;
       continue;
     }
+    if (!allowBlankLines && isIndentedCode(line)) {
+      index += 1;
+      continue;
+    }
 
     const questionMatch = line.match(CHOICE_QUESTION_PATTERN);
     if (!questionMatch) {
@@ -416,13 +460,14 @@ function parseChoiceCardsIn(
     while (cursor < to) {
       const candidate = lines[cursor] ?? "";
       if (CHOICE_OPTION_PATTERN.test(candidate)) break;
-      if (isQuestionBoundary(candidate)) break;
+      if (isQuestionBoundary(candidate) && !isIndentedCode(candidate)) break;
       if (!allowBlankLines) {
         if (
-          candidate.trim() === "" ||
-          HEADING_OR_RULE_PATTERN.test(candidate) ||
-          CHOICE_EXPLANATION_PATTERN.test(candidate) ||
-          parseLineMarker(candidate)
+          !isIndentedCode(candidate) &&
+          (candidate.trim() === "" ||
+            HEADING_OR_RULE_PATTERN.test(candidate) ||
+            CHOICE_EXPLANATION_PATTERN.test(candidate) ||
+            parseLineMarker(candidate))
         ) {
           break;
         }
@@ -481,8 +526,8 @@ function parseChoiceCardsIn(
             cursor += 1;
             continue;
           }
-          if (isQuestionBoundary(candidate)) break;
-          if (!allowBlankLines && HEADING_OR_RULE_PATTERN.test(candidate)) break;
+          if (isQuestionBoundary(candidate) && !isIndentedCode(candidate)) break;
+          if (!allowBlankLines && !isIndentedCode(candidate) && HEADING_OR_RULE_PATTERN.test(candidate)) break;
         }
         explanationLines.push(candidate);
         endLine = cursor;
@@ -508,6 +553,7 @@ function parseChoiceCardsIn(
         mode,
         ankiId: marker?.ankiId ?? null,
         legacySyncId: marker?.legacySyncId ?? null,
+        deletedInAnki: marker?.deleted ?? false,
         markerLine,
         deckBlock: null,
         questionMarkdown,
@@ -548,6 +594,10 @@ function parseImageOcclusionCardsIn(
       continue;
     }
     if (inFence) {
+      index += 1;
+      continue;
+    }
+    if (!allowBlankLines && isIndentedCode(line)) {
       index += 1;
       continue;
     }
@@ -622,9 +672,9 @@ function parseImageOcclusionCardsIn(
             cursor += 1;
             continue;
           }
-          if (isQuestionBoundary(candidate)) break;
-          if (!allowBlankLines && HEADING_OR_RULE_PATTERN.test(candidate)) break;
-          if (IMAGE_OCCLUSION_MASK_PATTERN.test(candidate)) break;
+          if (isQuestionBoundary(candidate) && !isIndentedCode(candidate)) break;
+          if (!allowBlankLines && !isIndentedCode(candidate) && HEADING_OR_RULE_PATTERN.test(candidate)) break;
+          if (IMAGE_OCCLUSION_MASK_PATTERN.test(candidate) && !isIndentedCode(candidate)) break;
         }
         answerLines.push(candidate);
         endLine = cursor;
@@ -642,6 +692,7 @@ function parseImageOcclusionCardsIn(
       kind: "image-occlusion",
       ankiId: marker?.ankiId ?? null,
       legacySyncId: marker?.legacySyncId ?? null,
+      deletedInAnki: marker?.deleted ?? false,
       markerLine,
       deckBlock: null,
       imageMarkdown,
@@ -678,6 +729,7 @@ function parseClozeCardsIn(
         kind: "cloze",
         ankiId: null,
         legacySyncId: null,
+        deletedInAnki: false,
         markerLine: null,
         deckBlock: null,
         markdown,
@@ -708,7 +760,12 @@ function parseClozeCardsIn(
       continue;
     }
 
-    if (inFence || line.trim() === "" || HEADING_OR_RULE_PATTERN.test(line)) {
+    if (
+      inFence ||
+      line.trim() === "" ||
+      HEADING_OR_RULE_PATTERN.test(line) ||
+      isIndentedCode(line)
+    ) {
       index += 1;
       continue;
     }
@@ -753,6 +810,7 @@ function parseClozeCardsIn(
         kind: "cloze",
         ankiId: marker?.ankiId ?? null,
         legacySyncId: marker?.legacySyncId ?? null,
+        deletedInAnki: marker?.deleted ?? false,
         markerLine,
         deckBlock: null,
         markdown: cardMarkdown,
@@ -803,6 +861,7 @@ export function findLegacyFileId(
       fence = opening;
       continue;
     }
+    if (isIndentedCode(line)) continue;
     const match = line.match(LEGACY_FILE_ID_PATTERN);
     if (match?.[1]) return { id: match[1], line: index };
   }
@@ -855,8 +914,37 @@ export function scanAnkiIdMarkers(markdown: string): number[] {
   return noteIds;
 }
 
+/** True when the document contains flashcard syntax even if no card parsed. */
+export function looksLikeCardContent(markdown: string): boolean {
+  const lines = markdown.split("\n");
+  let fence: FenceState | null = null;
+  let inFrontmatter = (lines[0] ?? "").trim() === "---";
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (inFrontmatter) {
+      if (index > 0 && line.trim() === "---") inFrontmatter = false;
+      continue;
+    }
+    if (fence) {
+      if (closesFence(line, fence)) fence = null;
+      continue;
+    }
+    const opening = openingFence(line);
+    if (opening) {
+      fence = opening;
+      continue;
+    }
+    if (isIndentedCode(line)) continue;
+    if (BLOCK_START_PATTERN.test(line) || BLOCK_END_PATTERN.test(line)) return true;
+    if (isQuestionBoundary(line) || IMAGE_OCCLUSION_PATTERN.test(line)) return true;
+    if (IMAGE_OCCLUSION_MASK_PATTERN.test(line)) return true;
+    if (CLOZE_PATTERN.test(line)) return true;
+  }
+  return false;
+}
+
 /**
- * Parses the whole document. Content inside Deck blocks is parsed with blank
+ * Parses the whole document. Content inside Anki blocks is parsed with blank
  * lines allowed; everything else keeps the traditional blank-line boundaries.
  */
 export function parseDocument(markdown: string): ParsedDocument {
@@ -877,15 +965,26 @@ export function parseDocument(markdown: string): ParsedDocument {
       card.deckBlock = block;
       const marker = block.markerIds[index];
       card.ankiId = marker?.noteId ?? null;
+      card.deletedInAnki = marker?.deleted ?? false;
       card.markerLine = marker?.line ?? null;
       card.legacySyncId = null;
       cards.push(card);
     });
     if (regionCards.length > 0 && block.markerIds.length > regionCards.length) {
       diagnostics.push({
-        severity: "warning",
+        severity: "error",
         line: block.endLine + 1,
-        message: `Deck 区块内有 ${regionCards.length} 张卡片，却有 ${block.markerIds.length} 个 Anki-ID；多余的 ID 不会使用。`
+        message: `Anki 区块内有 ${regionCards.length} 张卡片，却有 ${block.markerIds.length} 个标记；已停止同步以避免关联到错误的卡片。`
+      });
+    }
+    const hasContent = lines
+      .slice(block.contentStartLine, block.contentEndLine + 1)
+      .some((line) => line.trim() !== "");
+    if (hasContent && regionCards.length === 0) {
+      diagnostics.push({
+        severity: "error",
+        line: block.startLine + 1,
+        message: "Anki 区块内没有检测到有效题目；已停止同步以避免误删现有 Anki 卡片。"
       });
     }
   }
@@ -904,6 +1003,44 @@ export function parseDocument(markdown: string): ParsedDocument {
 
 export function parseFlashcards(markdown: string): ParsedFlashcard[] {
   return parseDocument(markdown).cards;
+}
+
+function signatureHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${(hash >>> 0).toString(36)}-${value.length.toString(36)}`;
+}
+
+/**
+ * Stable signature of a card's Markdown content. Used to remap Anki-IDs by
+ * content when the positional markers inside an Anki block get shifted.
+ */
+export function cardContentSignature(card: ParsedFlashcard): string {
+  let parts: unknown[];
+  if (card.kind === "cloze") {
+    parts = [card.kind, card.markdown];
+  } else if (card.kind === "image-occlusion") {
+    parts = [
+      card.kind,
+      card.imageMarkdown,
+      card.masks.map((mask) => [mask.x, mask.y, mask.width, mask.height]),
+      card.answerMarkdown
+    ];
+  } else if (card.kind === "choice") {
+    parts = [
+      card.kind,
+      card.mode,
+      card.questionMarkdown,
+      card.options.map((option) => [option.correct ? 1 : 0, option.markdown]),
+      card.explanationMarkdown
+    ];
+  } else {
+    parts = [card.kind, card.questionMarkdown, card.answerMarkdown];
+  }
+  return signatureHash(JSON.stringify(parts));
 }
 
 export function parseBasicCards(markdown: string): ParsedBasicCard[] {
@@ -1034,6 +1171,92 @@ export function applyAnkiIdMarkers(
     changed: result !== markdown,
     added,
     removedLegacyFileId
+  };
+}
+
+export interface AnkiDeleteUpdateResult {
+  markdown: string;
+  changed: boolean;
+  count: number;
+}
+
+/**
+ * Replaces `<!-- Anki-ID: n -->` with `<!-- Anki-Delete -->` for notes that no
+ * longer exist in Anki. The card content stays in Obsidian but is not synced
+ * again until the marker is removed or replaced by a new Anki-ID.
+ */
+export function markAnkiDeletedCards(
+  markdown: string,
+  noteIds: ReadonlySet<number>
+): AnkiDeleteUpdateResult {
+  if (noteIds.size === 0) return { markdown, changed: false, count: 0 };
+  const document = parseDocument(markdown);
+  const targets = document.cards.filter(
+    (card) =>
+      card.ankiId !== null &&
+      noteIds.has(card.ankiId) &&
+      !card.deletedInAnki &&
+      card.markerLine !== null
+  );
+  if (targets.length === 0) return { markdown, changed: false, count: 0 };
+  const lines = markdown.split("\n");
+  for (const card of targets) {
+    lines[card.markerLine as number] = ankiDeleteMarker();
+  }
+  const result = lines.join("\n");
+  return {
+    markdown: result,
+    changed: result !== markdown,
+    count: targets.length
+  };
+}
+
+/**
+ * Removes cards whose Anki notes were deleted from Markdown, including their
+ * markers. When every card of an Anki block is removed, the block markers are
+ * removed as well.
+ */
+export function removeAnkiDeletedCards(
+  markdown: string,
+  noteIds: ReadonlySet<number>
+): AnkiDeleteUpdateResult {
+  if (noteIds.size === 0) return { markdown, changed: false, count: 0 };
+  const document = parseDocument(markdown);
+  const targets = document.cards.filter(
+    (card) =>
+      card.ankiId !== null &&
+      noteIds.has(card.ankiId) &&
+      !card.deletedInAnki
+  );
+  if (targets.length === 0) return { markdown, changed: false, count: 0 };
+  const lines = markdown.split("\n");
+  const deleteLines = new Set<number>();
+  const targetSet = new Set(targets);
+
+  for (const block of document.deckBlocks) {
+    const blockCards = document.cards.filter((card) => card.deckBlock === block);
+    if (blockCards.length === 0) continue;
+    const remaining = blockCards.filter((card) => !targetSet.has(card));
+    if (remaining.length > 0) continue;
+    const lastMarker = block.markerIds[block.markerIds.length - 1];
+    const end = Math.max(block.endLine, lastMarker?.line ?? block.endLine);
+    for (let index = block.startLine; index <= end; index += 1) {
+      deleteLines.add(index);
+    }
+  }
+
+  for (const card of targets) {
+    for (let index = card.startLine; index <= card.endLine; index += 1) {
+      deleteLines.add(index);
+    }
+    if (card.markerLine !== null) deleteLines.add(card.markerLine);
+  }
+
+  const result = lines.filter((_, index) => !deleteLines.has(index)).join("\n");
+  return {
+    markdown: result,
+    changed: result !== markdown,
+    count: targets.length
   };
 }
 

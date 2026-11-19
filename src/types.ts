@@ -7,13 +7,21 @@ export interface AnkiSyncSettings {
   choiceModelName: string;
   imageOcclusionModelName: string;
   removedCardAction: RemovedCardAction;
+  ankiDeleteAction: AnkiDeleteAction;
   autoSync: boolean;
   autoSyncDelayMs: number;
   syncMedia: boolean;
+  /** Path filter mode: at most one of these switches can be enabled. */
+  useIgnorePaths: boolean;
+  useIncludePaths: boolean;
   ignorePaths: string[];
+  includePaths: string[];
 }
 
 export type RemovedCardAction = "keep" | "suspend" | "delete";
+
+/** What to do with an Obsidian card after its Anki note was deleted. */
+export type AnkiDeleteAction = "keep" | "delete";
 
 export const DEFAULT_SETTINGS: AnkiSyncSettings = {
   ankiConnectUrl: "http://127.0.0.1:8765",
@@ -24,15 +32,21 @@ export const DEFAULT_SETTINGS: AnkiSyncSettings = {
   choiceModelName: "Obsidian Choice",
   imageOcclusionModelName: "Obsidian Image Occlusion",
   removedCardAction: "suspend",
+  ankiDeleteAction: "keep",
   autoSync: true,
   autoSyncDelayMs: 1500,
   syncMedia: true,
-  ignorePaths: []
+  useIgnorePaths: true,
+  useIncludePaths: false,
+  ignorePaths: [],
+  includePaths: []
 };
 
 export interface NoteFileConfig {
   enabled: boolean;
   deckName: string;
+  /** Tags from the note's YAML frontmatter, mirrored onto its Anki notes. */
+  tags: string[];
 }
 
 /**
@@ -44,7 +58,10 @@ export interface FileSyncRegistryEntry {
   noteIds: number[];
   updatedAt: number;
   deckName?: string;
-  suspendedNoteIds?: number[];
+  /** Tags last applied from frontmatter, so removed tags can be cleaned up. */
+  tags?: string[];
+  /** Content signature per Anki note id, used to keep IDs aligned by content. */
+  noteHashes?: Record<string, string>;
 }
 
 export type FileSyncRegistry = Record<string, FileSyncRegistryEntry>;
@@ -57,16 +74,16 @@ export interface StoredPluginData {
 }
 
 export interface DeckBlockInfo {
-  /** Line containing `<!-- Deck_START -->`. */
+  /** Line containing `<!-- Anki_START -->`. */
   startLine: number;
-  /** Line containing `<!-- Deck_END -->`. */
+  /** Line containing `<!-- Anki_END -->`. */
   endLine: number;
-  /** First content line after `Deck_START` (may be past the end when empty). */
+  /** First content line after `Anki_START` (may be past the end when empty). */
   contentStartLine: number;
-  /** Last content line before `Deck_END`. */
+  /** Last content line before `Anki_END`. */
   contentEndLine: number;
-  /** `<!-- Anki-ID: n -->` markers written after `Deck_END`, in card order. */
-  markerIds: Array<{ noteId: number; line: number }>;
+  /** `Anki-ID` / `Anki-Delete` markers written after `Anki_END`, in card order. */
+  markerIds: Array<{ noteId: number | null; line: number; deleted: boolean }>;
   /** Line index where the next missing marker should be inserted. */
   insertLine: number;
 }
@@ -76,9 +93,11 @@ export interface ParsedCardBase {
   ankiId: number | null;
   /** Legacy UUID parsed from `<!-- anki-sync-id: ... -->`, used for migration only. */
   legacySyncId: string | null;
+  /** True when the card carries `<!-- Anki-Delete -->` and stays out of sync. */
+  deletedInAnki: boolean;
   /** Line holding the card-level marker, when one exists. */
   markerLine: number | null;
-  /** Set when this card lives inside a `Deck_START`/`Deck_END` block. */
+  /** Set when this card lives inside an `Anki_START`/`Anki_END` block. */
   deckBlock: DeckBlockInfo | null;
   startLine: number;
   endLine: number;
@@ -134,7 +153,7 @@ export interface ParsedDocument {
   /** Legacy `<!-- anki-sync-file-id: ... -->` value, removed on the next sync. */
   legacyFileId: string | null;
   legacyFileIdLine: number | null;
-  /** Structural problems such as an unclosed Deck block. */
+  /** Structural problems such as an unclosed Anki block. */
   diagnostics: SyncDiagnostic[];
 }
 
@@ -143,6 +162,10 @@ export interface SyncResult {
   updated: number;
   deleted: number;
   suspended: number;
+  /** Removed cards waiting for a manual confirmation before deletion. */
+  pending: number;
+  /** Cards whose Anki note was deleted and handled according to the setting. */
+  ankiDeleted: number;
   unchanged: number;
   duplicates: number;
   total: number;
@@ -158,6 +181,7 @@ export interface SyncPreview {
   filePath: string;
   enabled: boolean;
   deckName: string;
+  tags: string[];
   created: number;
   updated: number;
   unchanged: number;

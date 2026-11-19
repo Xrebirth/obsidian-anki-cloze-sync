@@ -8,6 +8,83 @@ export function findStaleNoteIds(
   return [...new Set(knownNoteIds)].filter((noteId) => !active.has(noteId));
 }
 
+export interface RemappableCard {
+  ankiId: number | null;
+  deletedInAnki: boolean;
+}
+
+/**
+ * Keeps Anki-IDs aligned with content when markers inside an Anki block shift.
+ * A card is remapped only to an unambiguous note that is not currently claimed
+ * by another visible marker.
+ */
+export function remapCardsByContent<T extends RemappableCard>(
+  cards: T[],
+  previousHashes: Record<string, string> | undefined,
+  signatures: ReadonlyMap<T, string>,
+  existingNoteIds?: ReadonlySet<number>,
+  excludedNoteIds?: ReadonlySet<number>
+): void {
+  if (!previousHashes || Object.keys(previousHashes).length === 0) return;
+  const hashesByNoteId = new Map<number, string>();
+  for (const [key, value] of Object.entries(previousHashes)) {
+    const noteId = Number.parseInt(key, 10);
+    if (Number.isSafeInteger(noteId) && noteId > 0) {
+      hashesByNoteId.set(noteId, value);
+    }
+  }
+  const owners = new Map<number, T>();
+  for (const card of cards) {
+    if (card.ankiId !== null && !card.deletedInAnki) {
+      owners.set(card.ankiId, card);
+    }
+  }
+  const assigned = new Set<number>();
+  const freed = new Set<number>();
+  const pending: T[] = [];
+  for (const card of cards) {
+    if (card.deletedInAnki) continue;
+    const signature = signatures.get(card);
+    if (!signature) continue;
+    if (card.ankiId !== null && hashesByNoteId.get(card.ankiId) === signature) {
+      assigned.add(card.ankiId);
+    } else {
+      pending.push(card);
+    }
+  }
+
+  // Resolve chains such as A→11, B→22, C→33 after one marker was deleted.
+  // Reassigning a card frees its old marker for the next card in the chain.
+  let progress = true;
+  while (progress && pending.length > 0) {
+    progress = false;
+    for (let index = 0; index < pending.length; index += 1) {
+      const card = pending[index] as T;
+      const signature = signatures.get(card);
+      if (!signature) continue;
+      const candidates = [...hashesByNoteId.entries()]
+        .filter(
+          ([noteId, hash]) =>
+            hash === signature &&
+            !assigned.has(noteId) &&
+            (existingNoteIds === undefined || existingNoteIds.has(noteId)) &&
+            (excludedNoteIds === undefined || !excludedNoteIds.has(noteId)) &&
+            (owners.get(noteId) === undefined || freed.has(noteId))
+        )
+        .map(([noteId]) => noteId);
+      if (candidates.length !== 1) continue;
+      const noteId = candidates[0] as number;
+      const oldNoteId = card.ankiId;
+      card.ankiId = noteId;
+      assigned.add(noteId);
+      if (oldNoteId !== null && oldNoteId !== noteId) freed.add(oldNoteId);
+      pending.splice(index, 1);
+      index -= 1;
+      progress = true;
+    }
+  }
+}
+
 /** Legacy tags added by older releases; every one of them is removed on sync. */
 export const LEGACY_PLUGIN_TAG_PREFIXES = [
   "obsidian_sync_id_",
@@ -32,10 +109,14 @@ export function isLegacyPluginTag(tag: string): boolean {
 /** Tags that must be stripped from an Anki note the plugin touches. */
 export function obsoletePluginTags(
   tags: string[],
-  legacyManagedTags: Iterable<string> = []
+  legacyManagedTags: Iterable<string> = [],
+  keepTags: Iterable<string> = []
 ): string[] {
   const managed = new Set(legacyManagedTags);
-  return tags.filter((tag) => isLegacyPluginTag(tag) || managed.has(tag));
+  const keep = new Set(keepTags);
+  return tags.filter(
+    (tag) => (isLegacyPluginTag(tag) || managed.has(tag)) && !keep.has(tag)
+  );
 }
 
 const SOURCE_LINK_PATTERN = /obsidian:\/\/open\?[^"'\s<>]*/g;
